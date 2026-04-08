@@ -1,0 +1,37 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Store {
+  WOOLWORTHS
+  COLES
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  store           Store
+  name            String
+  brand           String?
+  category        String
+  unit            String?
+  originalPrice   Float?
+  salePrice       Float
+  discountPercent Int?
+  validFrom       DateTime
+  validTo         DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([store, name, validFrom])
+  @@index([store, validFrom, validTo])
+}
