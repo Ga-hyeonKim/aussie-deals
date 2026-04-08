@@ -1,0 +1,33 @@
+name: Fetch Woolworths Specials
+
+on:
+  schedule:
+    # Every Wednesday at 21:00 UTC = Wednesday 05:00 AWST
+    # Woolworths updates specials around 07:00 AEST (05:00 AWST)
+    - cron: "0 21 * * 2"
+    # Note: cron uses UTC; Tuesday 21:00 UTC = Wednesday 05:00 AWST
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - run: npx playwright install chromium --with-deps
+
+      - name: Run Woolworths fetcher
+        run: npx tsx scripts/fetch-woolworths.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
