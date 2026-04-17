@@ -2,14 +2,12 @@ import "dotenv/config";
 import process from "process";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 
 chromium.use(StealthPlugin());
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 const CATEGORIES = [
@@ -62,6 +60,9 @@ interface RawProduct {
   Price?: number;
   WasPrice?: number;
   IsOnSpecial?: boolean;
+  MediumImageFile?: string;
+  SmallImageFile?: string;
+  LargeImageFile?: string;
 }
 
 interface ParsedProduct {
@@ -72,6 +73,7 @@ interface ParsedProduct {
   salePrice: number;
   originalPrice: number | null;
   discountPercent: number | null;
+  imageUrl: string | null;
 }
 
 function parseProduct(p: RawProduct, category: string): ParsedProduct | null {
@@ -91,6 +93,7 @@ function parseProduct(p: RawProduct, category: string): ParsedProduct | null {
     salePrice: p.Price,
     originalPrice: p.WasPrice ?? null,
     discountPercent,
+    imageUrl: p.MediumImageFile ?? p.LargeImageFile ?? p.SmallImageFile ?? null,
   };
 }
 
@@ -199,6 +202,7 @@ async function main() {
         discountPercent: p.discountPercent,
         brand: p.brand,
         unit: p.unit,
+        imageUrl: p.imageUrl,
         validTo,
       },
       create: {
@@ -210,6 +214,7 @@ async function main() {
         salePrice: p.salePrice,
         originalPrice: p.originalPrice,
         discountPercent: p.discountPercent,
+        imageUrl: p.imageUrl,
         validFrom,
         validTo,
       },

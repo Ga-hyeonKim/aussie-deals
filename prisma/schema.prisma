@@ -27,6 +27,7 @@ model Product {
   originalPrice   Float?
   salePrice       Float
   discountPercent Int?
+  imageUrl        String?
   validFrom       DateTime
   validTo         DateTime
   createdAt       DateTime @default(now())
