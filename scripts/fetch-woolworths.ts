@@ -136,6 +136,15 @@ async function fetchCategorySpecials(
 
     if (result.error || !result.Bundles) break;
 
+    if (pageNumber === 1 && products.length === 0) {
+      const sample = result.Bundles?.[0]?.Products?.[0];
+      if (sample) {
+        const imageKeys = Object.keys(sample).filter(k => /image|img|photo|thumb|media/i.test(k));
+        console.log(`[DEBUG] Sample product keys with 'image': ${JSON.stringify(imageKeys)}`);
+        console.log(`[DEBUG] Sample values:`, imageKeys.map(k => `${k}=${sample[k]}`));
+      }
+    }
+
     let pageProducts = 0;
     for (const bundle of result.Bundles) {
       for (const p of bundle.Products ?? []) {
