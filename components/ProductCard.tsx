@@ -1,3 +1,4 @@
+import Image from "next/image"
 import { ProductModel } from "@/app/generated/prisma/models"
 import FavoriteButton from "@/components/FavoriteButton"
 
@@ -8,6 +9,17 @@ type Props = {
 export default function ProductCard({ product }: Props) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm flex flex-col gap-2">
+      {product.imageUrl && (
+        <div className="relative mx-auto h-32 w-32">
+          <Image
+            src={product.imageUrl}
+            alt={product.name}
+            fill
+            sizes="128px"
+            className="object-contain"
+          />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-xs text-gray-400 uppercase tracking-wide">{product.store}</p>

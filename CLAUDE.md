@@ -17,7 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | ORM | Prisma 7 | Type-safe queries, great DX with TypeScript |
 | Web app hosting | Vercel | Best-in-class Next.js deployment |
 | Scraper runner | GitHub Actions (cron) | Supports Playwright; Vercel serverless cannot run a browser |
-| Auth (post-MVP) | NextAuth.js | OAuth + session handling |
+| Charts | Recharts | Native React components, lightweight, SSR-friendly with "use client" |
+| Auth (post-MVP) | NextAuth.js v5 | OAuth + session handling |
 
 ## Commands
 
@@ -61,10 +62,14 @@ Vercel (Next.js app)
 
 The DB schema uses a `Store` enum (`WOOLWORTHS | COLES`) so both stores share the same `Product` table. The comparison UI works automatically once Coles data exists.
 
+### Cross-Store Product Matching
+When Coles data becomes available, match same products across stores using a `normalizedName` column on `Product` (lowercase, stripped of brand/size variations) with an index. No join table needed — just WHERE on normalizedName + different store. Cart comparison (7) uses this to show total price at each store.
+
 ### Key DB Models
 - `Product` — weekly special item (store, name, brand, category, unit, originalPrice, salePrice, discountPercent, validFrom, validTo)
 - `User` — added post-MVP with NextAuth
-- `Favorite` — join table between User and Product category/name patterns
+- `Favorite` — watchlist/wishlist items (products user wants to track regardless of current sale status; triggers notifications when on sale)
+- `CartItem` — this week's shopping list (on-sale items user plans to buy this trip; acts as in-store checklist)
 - `PriceHistory` — append-only log of prices per product for history graphs
 
 ### Auth Strategy
@@ -96,20 +101,32 @@ prisma/
 
 ## Feature Roadmap
 
-### MVP (Build in this order)
+### MVP (Complete)
 - [x] **0. Project setup** — Next.js + Prisma + Neon DB connected
-- [ ] **1. Data pipeline** — Woolworths scraper script + GitHub Actions cron + DB upsert
-- [ ] **2. Weekly deals page** — product grid, category filter, store badge
-- [ ] **3. Search** — filter by name, show only discounted items
-- [ ] **4. Favorites** — localStorage-based save/unsave, favorites page
+- [x] **1. Data pipeline** — Woolworths scraper script + GitHub Actions cron + DB upsert
+- [x] **2. Weekly deals page** — product grid, category filter, store badge
+- [x] **3. Search** — filter by name, show only discounted items
+- [x] **4. Favorites** — localStorage-based save/unsave, favorites page
 
-### Phase 2 (after MVP is live)
-- [ ] **5. Coles integration** — add Coles fetcher, price comparison UI unlocks automatically
-- [ ] **6. User auth** — NextAuth.js, migrate favorites to DB
-- [ ] **7. Cart comparison** — add items to cart, compare total at Woolworths vs Coles
-- [ ] **8. Personalized recommendations** — based on favorites/categories, "this week's deals for you"
-- [ ] **9. Price history** — graph price changes over time, surface "real deal" badge
-- [ ] **10. Notifications** — email/push when favorited item goes on sale
+### Phase 2 (in progress)
+- [ ] **5. Coles integration** — add Coles fetcher, price comparison UI unlocks automatically (blocked: Coles specials page still broken as of 2026-04-17)
+- [x] **6. User auth** — NextAuth.js v5, Google OAuth, Prisma adapter, JWT sessions
+- [ ] **6a. Navbar profile UI** — show Google avatar + name, dropdown menu (Profile, Sign out)
+- [x] **6b. Session maxAge** — keep default 30 days (suits weekly shopping cycle)
+- [ ] **6c. Favorites/Cart split** — separate Favorites (watchlist: track items, get notified on sale) from Cart (this week's shopping list: on-sale items to buy now, in-store checklist). Requires new CartItem DB model, UI for both, navbar update
+- [ ] **6d. Favorites localStorage → DB migration** — logged-in users save favorites to DB via Favorite model
+- [ ] **6e. Session-based user features** — cross-device sync, remote logout, or login history (builds on session infra for CV-worthy functionality)
+- [ ] **7. Cart comparison** — compare Cart total at Woolworths vs Coles (requires Coles data)
+- [ ] **8. Preferred stores** — user selects specific store locations (e.g. "Woolies near uni", "Coles near home"); filters deals to only relevant stores. Stored on User profile.
+- [ ] **9. Personalized recommendations** — based on favorites/categories/preferred stores, "this week's deals for you"
+- [ ] **10. Price history** — graph price changes over time using **Recharts**, surface "real deal" badge. Requires product detail page (`/product/[id]`).
+- [ ] **11. Notifications** — email/push when favorited item goes on sale
+
+### Phase 3 (new features)
+- [ ] **12. "Real deal" badge** — compare current sale price against price history average to flag genuinely good deals
+- [ ] **13. Weekly digest email** — opt-in newsletter with trending items (most favorited by other users), items cheaper than usual, personalised picks. Only for users who subscribe.
+- [ ] **14. Share deals** — copy link / share to social (KakaoTalk, etc.) for individual deals
+- [ ] **15. PWA** — progressive web app with home screen install for mobile in-store use
 
 ## Data Notes
 
