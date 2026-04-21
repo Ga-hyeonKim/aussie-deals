@@ -43,4 +43,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Google OAuth credentials
+client_secret*.json
+
 /app/generated/prisma

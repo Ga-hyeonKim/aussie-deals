@@ -4,6 +4,8 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import AuthProvider from "@/components/AuthProvider";
 import { FavoritesProvider } from "@/hooks/useFavorites";
+import { CartProvider } from "@/hooks/useCart";
+import CartFab from "@/components/CartFab";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,8 +35,11 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           <FavoritesProvider>
-            <Navbar />
-            {children}
+            <CartProvider>
+              <Navbar />
+              {children}
+              <CartFab />
+            </CartProvider>
           </FavoritesProvider>
         </AuthProvider>
       </body>
