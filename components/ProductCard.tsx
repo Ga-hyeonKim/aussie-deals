@@ -1,6 +1,7 @@
 import Image from "next/image"
 import { ProductModel } from "@/app/generated/prisma/models"
 import FavoriteButton from "@/components/FavoriteButton"
+import CartButton from "@/components/CartButton"
 
 type Props = {
   product: ProductModel
@@ -52,7 +53,10 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      <p className="text-xs text-gray-400">{product.category}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-400">{product.category}</p>
+        <CartButton productId={product.id} />
+      </div>
     </div>
   )
 }

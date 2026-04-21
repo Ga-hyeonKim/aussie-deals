@@ -5,16 +5,12 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
-
-const links = [
-  { href: "/", label: "Deals" },
-  { href: "/search", label: "Search" },
-  { href: "/favorites", label: "Favorites" },
-]
+import { useCart } from "@/hooks/useCart"
 
 export default function Navbar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const { count } = useCart()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -34,20 +30,52 @@ export default function Navbar() {
         <Link href="/" className="text-lg font-bold text-gray-900">
           AussieDeals
         </Link>
-        <nav className="flex items-center gap-6">
-          {links.map(({ href, label }) => (
+        <nav className="flex items-center gap-4">
+          <Link
+            href="/"
+            className={`text-sm font-medium transition-colors ${
+              pathname === "/" ? "text-gray-900" : "text-gray-400 hover:text-gray-700"
+            }`}
+          >
+            Deals
+          </Link>
+          <Link
+            href="/favorites"
+            className={`text-sm font-medium transition-colors ${
+              pathname === "/favorites" ? "text-gray-900" : "text-gray-400 hover:text-gray-700"
+            }`}
+          >
+            Favorites
+          </Link>
+          <Link
+            href="/search"
+            className={`transition-colors ${
+              pathname === "/search" ? "text-gray-900" : "text-gray-400 hover:text-gray-700"
+            }`}
+            aria-label="Search"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          {session?.user && (
             <Link
-              key={href}
-              href={href}
-              className={`text-sm font-medium transition-colors ${
-                pathname === href
-                  ? "text-gray-900"
-                  : "text-gray-400 hover:text-gray-700"
+              href="/cart"
+              className={`relative transition-colors ${
+                pathname === "/cart" ? "text-gray-900" : "text-gray-400 hover:text-gray-700"
               }`}
+              aria-label="Cart"
             >
-              {label}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                <path d="M1 1.75A.75.75 0 011.75 1h1.628a1.5 1.5 0 011.427 1.05l.19.632H18.25a.75.75 0 01.716.97l-2 6.5A.75.75 0 0116.25 11H6.292l.234.78a.5.5 0 00.476.345h8.248a.75.75 0 010 1.5H7.002a2 2 0 01-1.905-1.382L2.78 3.28a.5.5 0 00-.476-.345H1.75A.75.75 0 011 2.185V1.75zM6 17.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
+              </svg>
+              {count > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                  {count}
+                </span>
+              )}
             </Link>
-          ))}
+          )}
           {session?.user ? (
             <div className="relative" ref={dropdownRef}>
               <button
