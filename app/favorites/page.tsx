@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useFavorites } from "@/hooks/useFavorites"
+import Image from "next/image"
 import FavoriteButton from "@/components/FavoriteButton"
 import type { StoreProductModel } from "@/app/generated/prisma/models"
 import type { ProductModel } from "@/app/generated/prisma/models"
@@ -80,17 +81,24 @@ export default function FavoritesPage() {
                 {searchResults.map(product => (
                   <div
                     key={product.id}
-                    className="flex items-start justify-between gap-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
+                    className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
                   >
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase text-gray-400">{product.store}</p>
-                      <p className="truncate text-sm font-semibold leading-tight text-gray-900">{product.name}</p>
-                      {product.brand && (
-                        <p className="truncate text-xs text-gray-500">{product.brand}</p>
-                      )}
-                      <p className="mt-1 text-sm font-bold text-gray-900">${product.price.toFixed(2)}</p>
+                    {product.imageUrl && (
+                      <div className="relative mx-auto h-24 w-24">
+                        <Image src={product.imageUrl} alt={product.name} fill sizes="96px" className="object-contain" />
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase text-gray-400">{product.store}</p>
+                        <p className="truncate text-sm font-semibold leading-tight text-gray-900">{product.name}</p>
+                        {product.brand && (
+                          <p className="truncate text-xs text-gray-500">{product.brand}</p>
+                        )}
+                        <p className="mt-1 text-sm font-bold text-gray-900">${product.price.toFixed(2)}</p>
+                      </div>
+                      <FavoriteButton storeProductId={product.id} productId={product.id} />
                     </div>
-                    <FavoriteButton storeProductId={product.id} productId={product.id} />
                   </div>
                 ))}
               </div>
@@ -115,6 +123,11 @@ export default function FavoritesPage() {
                   key={fav.id}
                   className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
                 >
+                  {fav.storeProduct.imageUrl && (
+                    <div className="relative mx-auto h-28 w-28">
+                      <Image src={fav.storeProduct.imageUrl} alt={fav.storeProduct.name} fill sizes="112px" className="object-contain" />
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs uppercase tracking-wide text-gray-400">{fav.storeProduct.store}</p>
