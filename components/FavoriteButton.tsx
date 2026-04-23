@@ -3,16 +3,16 @@
 import { useFavorites } from "@/hooks/useFavorites"
 
 type Props = {
-  productId: string
+  storeProductId: string
 }
 
-export default function FavoriteButton({ productId }: Props) {
+export default function FavoriteButton({ storeProductId }: Props) {
   const { isFavorited, toggle } = useFavorites()
-  const favorited = isFavorited(productId)
+  const favorited = isFavorited(storeProductId)
 
   return (
     <button
-      onClick={() => toggle(productId)}
+      onClick={() => toggle(storeProductId)}
       aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
       className="text-xl leading-none transition-transform active:scale-90"
     >
