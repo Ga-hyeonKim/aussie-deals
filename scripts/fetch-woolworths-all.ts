@@ -1,5 +1,9 @@
-import "dotenv/config";
+import { config } from "dotenv";
 import process from "process";
+import fs from "fs";
+import path from "path";
+
+config({ path: path.join(__dirname, "../.env") });
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { PrismaNeon } from "@prisma/adapter-neon";
@@ -9,6 +13,9 @@ chromium.use(StealthPlugin());
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
+
+const DUMP_PATH = path.join(__dirname, "woolworths-dump.json");
+const BATCH_SIZE = 25;
 
 const CATEGORIES = [
   { id: "1-E5BEE36E", name: "Fruit & Veg" },
@@ -49,7 +56,6 @@ interface ParsedProduct {
 
 function parseProduct(p: RawProduct, category: string): ParsedProduct | null {
   if (!p.Name || !p.Price) return null;
-
   return {
     name: p.Name,
     brand: p.Brand ?? null,
@@ -119,44 +125,79 @@ async function fetchCategoryAll(
   return products;
 }
 
-const BATCH_SIZE = 100;
-
-async function upsertBatch(products: ParsedProduct[]) {
-  await prisma.$transaction(
-    products.map(p =>
-      prisma.storeProduct.upsert({
-        where: {
-          store_name: {
+async function upsertBatch(products: ParsedProduct[], batchIndex: number): Promise<void> {
+  try {
+    await prisma.$transaction(
+      products.map(p =>
+        prisma.storeProduct.upsert({
+          where: { store_name: { store: "WOOLWORTHS", name: p.name } },
+          update: {
+            brand: p.brand,
+            category: p.category,
+            unit: p.unit,
+            price: p.price,
+            imageUrl: p.imageUrl,
+          },
+          create: {
             store: "WOOLWORTHS",
             name: p.name,
+            brand: p.brand,
+            category: p.category,
+            unit: p.unit,
+            price: p.price,
+            imageUrl: p.imageUrl,
           },
-        },
-        update: {
-          brand: p.brand,
-          category: p.category,
-          unit: p.unit,
-          price: p.price,
-          imageUrl: p.imageUrl,
-        },
-        create: {
-          store: "WOOLWORTHS",
-          name: p.name,
-          brand: p.brand,
-          category: p.category,
-          unit: p.unit,
-          price: p.price,
-          imageUrl: p.imageUrl,
-        },
-      })
-    )
-  );
+        })
+      ),
+      { timeout: 30000 }
+    );
+  } catch (err) {
+    console.error(`[Woolworths All] 배치 ${batchIndex} 실패, 개별 저장으로 재시도...`, err);
+    // fallback: individual upserts
+    for (const p of products) {
+      await prisma.storeProduct.upsert({
+        where: { store_name: { store: "WOOLWORTHS", name: p.name } },
+        update: { brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
+        create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
+      }).catch(e => console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message));
+    }
+  }
 }
 
-async function main() {
-  console.log("[Woolworths All] 전체 품목 수집 시작...");
+async function saveToDb(products: ParsedProduct[]) {
+  console.log(`[Woolworths All] DB 저장 시작: ${products.length}개...`);
 
-  let browser: import("playwright").Browser | undefined;
+  // warm-up query to wake Neon from sleep
+  await prisma.$queryRaw`SELECT 1`;
+  console.log("[Woolworths All] DB 연결 확인 완료.");
+
+  let saved = 0;
+  for (let i = 0; i < products.length; i += BATCH_SIZE) {
+    const batch = products.slice(i, i + BATCH_SIZE);
+    await upsertBatch(batch, Math.floor(i / BATCH_SIZE));
+    saved += batch.length;
+    if (saved % 500 === 0 || saved >= products.length) {
+      console.log(`[Woolworths All] DB 저장 진행: ${saved}/${products.length}`);
+    }
+  }
+
+  console.log(`[Woolworths All] DB 저장 완료: ${products.length}개`);
+}
+
+function deduplicate(products: ParsedProduct[]): ParsedProduct[] {
+  const seen = new Set<string>();
+  return products.filter(p => {
+    const key = `WOOLWORTHS:${p.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function collect(): Promise<ParsedProduct[]> {
+  console.log("[Woolworths All] 전체 품목 수집 시작...");
   const allProducts: ParsedProduct[] = [];
+  let browser: import("playwright").Browser | undefined;
 
   try {
     browser = await chromium.launch({ headless: true });
@@ -179,26 +220,32 @@ async function main() {
     if (browser) await browser.close();
   }
 
-  const seen = new Set<string>();
-  const unique = allProducts.filter(p => {
-    const key = `WOOLWORTHS:${p.name}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return allProducts;
+}
 
-  console.log(`[Woolworths All] 총 ${allProducts.length}개 수집, 중복 제거 후 ${unique.length}개. DB 저장 중...`);
+async function main() {
+  const fromJson = process.argv.includes("--from-json");
 
-  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-    const batch = unique.slice(i, i + BATCH_SIZE);
-    await upsertBatch(batch);
-    const done = Math.min(i + BATCH_SIZE, unique.length);
-    if (done % 1000 === 0 || done === unique.length) {
-      console.log(`[Woolworths All] DB 저장 진행: ${done}/${unique.length}`);
+  let unique: ParsedProduct[];
+
+  if (fromJson) {
+    if (!fs.existsSync(DUMP_PATH)) {
+      console.error(`[Woolworths All] dump 파일 없음: ${DUMP_PATH}`);
+      process.exit(1);
     }
+    const raw = JSON.parse(fs.readFileSync(DUMP_PATH, "utf-8")) as ParsedProduct[];
+    unique = deduplicate(raw);
+    console.log(`[Woolworths All] dump 파일 로드: ${raw.length}개 → 중복 제거 후 ${unique.length}개`);
+  } else {
+    const allProducts = await collect();
+    unique = deduplicate(allProducts);
+    console.log(`[Woolworths All] 총 ${allProducts.length}개 수집, 중복 제거 후 ${unique.length}개`);
+
+    fs.writeFileSync(DUMP_PATH, JSON.stringify(unique, null, 2));
+    console.log(`[Woolworths All] dump 파일 저장 완료: ${DUMP_PATH}`);
   }
 
-  console.log(`[Woolworths All] DB 저장 완료: ${unique.length}개`);
+  await saveToDb(unique);
   await prisma.$disconnect();
 }
 
