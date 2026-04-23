@@ -1,0 +1,36 @@
+name: Fetch Woolworths All Products
+
+on:
+  schedule:
+    # Every other Monday at 20:00 UTC = Tuesday 04:00 AWST
+    - cron: "0 20 * * 1"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Push schema to DB
+        run: npx prisma db push --accept-data-loss
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - run: npx playwright install chromium --with-deps
+
+      - name: Run Woolworths all products fetcher
+        run: npx tsx scripts/fetch-woolworths-all.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
