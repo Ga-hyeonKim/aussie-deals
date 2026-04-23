@@ -27,8 +27,9 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-        <Link href="/" className="text-lg font-bold text-gray-900">
-          AussieDeals
+        <Link href="/" className="flex items-center gap-1.5 text-lg font-bold text-gray-900">
+          <span className="text-green-600">🛒</span>
+          <span>AussieDeals</span>
         </Link>
         <nav className="flex items-center gap-4">
           <Link
@@ -41,11 +42,14 @@ export default function Navbar() {
           </Link>
           <Link
             href="/favorites"
-            className={`text-sm font-medium transition-colors ${
+            className={`transition-colors ${
               pathname === "/favorites" ? "text-gray-900" : "text-gray-400 hover:text-gray-700"
             }`}
+            aria-label="Favorites"
           >
-            Favorites
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path d="M9.653 16.915l-.005-.003-.019-.01a20.759 20.759 0 01-1.162-.682 22.045 22.045 0 01-2.582-2.085c-1.034-1.062-2.135-2.455-2.627-4.008-.228-.698-.33-1.338-.327-1.975.005-1.375.56-2.666 1.475-3.614.93-.96 2.212-1.538 3.594-1.538 1.12 0 2.17.424 2.999 1.07C11.83 3.924 12.88 3.5 14 3.5c1.382 0 2.664.578 3.594 1.538.916.948 1.47 2.239 1.476 3.614.002.637-.1 1.277-.327 1.975-.493 1.553-1.594 2.946-2.628 4.008a22.044 22.044 0 01-2.582 2.085 20.76 20.76 0 01-1.162.682l-.019.01-.005.003h-.002a.739.739 0 01-.694 0l-.001-.001z" />
+            </svg>
           </Link>
           <Link
             href="/search"

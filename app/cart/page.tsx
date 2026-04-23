@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useSession } from "next-auth/react"
 import { useCart } from "@/hooks/useCart"
 import Link from "next/link"
@@ -19,13 +19,14 @@ export default function CartPage() {
   const { toggle } = useCart()
   const [items, setItems] = useState<CartItemWithProduct[]>([])
   const [loading, setLoading] = useState(true)
+  const [undoItem, setUndoItem] = useState<CartItemWithProduct | null>(null)
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!session?.user) {
       setLoading(false)
       return
     }
-
     fetch("/api/cart")
       .then((res) => res.json())
       .then((data) => setItems(data))
@@ -46,16 +47,29 @@ export default function CartPage() {
   }
 
   const now = new Date()
-
   const activeItems = items.filter((i) => new Date(i.product.validTo) >= now)
   const expiredItems = items.filter((i) => new Date(i.product.validTo) < now)
+  const activeTotal = activeItems.reduce((sum, i) => sum + i.product.salePrice, 0)
 
   function handleRemove(productId: string) {
-    toggle(productId)
+    const item = items.find((i) => i.productId === productId)
+    if (!item) return
+
     setItems((prev) => prev.filter((i) => i.productId !== productId))
+    toggle(productId)
+
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    setUndoItem(item)
+    undoTimeoutRef.current = setTimeout(() => setUndoItem(null), 3000)
   }
 
-  const activeTotal = activeItems.reduce((sum, i) => sum + i.product.salePrice, 0)
+  function handleUndo() {
+    if (!undoItem) return
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    setItems((prev) => [undoItem, ...prev])
+    toggle(undoItem.productId)
+    setUndoItem(null)
+  }
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -102,6 +116,18 @@ export default function CartPage() {
           </div>
         )}
       </div>
+
+      {undoItem && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-gray-900 px-5 py-3 text-sm text-white shadow-xl">
+          <span className="max-w-[160px] truncate">{undoItem.product.name} removed</span>
+          <button
+            onClick={handleUndo}
+            className="shrink-0 font-bold text-green-400 hover:text-green-300 transition-colors"
+          >
+            Undo
+          </button>
+        </div>
+      )}
     </main>
   )
 }
