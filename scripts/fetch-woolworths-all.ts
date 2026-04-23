@@ -149,7 +149,6 @@ async function upsertBatch(products: ParsedProduct[], batchIndex: number): Promi
           },
         })
       ),
-      { timeout: 30000 }
     );
   } catch (err) {
     console.error(`[Woolworths All] 배치 ${batchIndex} 실패, 개별 저장으로 재시도...`, err);
@@ -210,10 +209,13 @@ async function collect(): Promise<ParsedProduct[]> {
     await page.waitForTimeout(3000);
     console.log("[Woolworths All] 세션 준비 완료. 카테고리별 수집 시작...");
 
-    for (const cat of CATEGORIES) {
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      const cat = CATEGORIES[i];
+      const start = Date.now();
       const products = await fetchCategoryAll(page, cat);
       allProducts.push(...products);
-      console.log(`[Woolworths All] ${cat.name}: ${products.length}개`);
+      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+      console.log(`[Woolworths All] (${i + 1}/${CATEGORIES.length}) ${cat.name}: ${products.length}개 — ${elapsed}s`);
       await new Promise((r) => setTimeout(r, 500));
     }
   } finally {
