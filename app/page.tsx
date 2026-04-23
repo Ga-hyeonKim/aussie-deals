@@ -31,12 +31,25 @@ export default async function Home() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="mb-8">
+        <div
+          className="mb-8 overflow-hidden rounded-2xl border border-green-100 bg-white px-6 py-8 shadow-sm"
+          style={{
+            backgroundImage: "radial-gradient(circle, #dcfce7 1.5px, transparent 1.5px)",
+            backgroundSize: "18px 18px",
+          }}
+        >
           <h1 className="text-3xl font-bold text-gray-900">This week&apos;s deals</h1>
           {dateRange ? (
-            <p className="mt-1 text-gray-500">Woolworths specials for {dateRange}</p>
+            <p className="mt-1 text-gray-500">Woolworths specials · {dateRange}</p>
           ) : (
             <p className="mt-1 text-gray-500">Woolworths weekly specials</p>
+          )}
+          {products.length > 0 && (
+            <div className="mt-4">
+              <Suspense>
+                <SearchBar />
+              </Suspense>
+            </div>
           )}
         </div>
 
@@ -46,11 +59,6 @@ export default async function Home() {
           </p>
         ) : (
           <>
-            <div className="mb-6">
-              <Suspense>
-                <SearchBar />
-              </Suspense>
-            </div>
             <DealsGrid products={products} categories={categories} />
           </>
         )}
