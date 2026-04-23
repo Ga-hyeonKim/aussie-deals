@@ -1,0 +1,17 @@
+<svg width="32" height="38" viewBox="0 0 32 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hole at top -->
+  <circle cx="16" cy="5" r="4" fill="#15803d"/>
+  <circle cx="16" cy="5" r="2.2" fill="white"/>
+
+  <!-- Tag body: chunky rounded rect -->
+  <rect x="1" y="9" width="30" height="28" rx="10" fill="#16a34a"/>
+
+  <!-- Dot pattern: 3x2 grid -->
+  <circle cx="9"  cy="18" r="3" fill="#bbf7d0"/>
+  <circle cx="16" cy="18" r="3" fill="#bbf7d0"/>
+  <circle cx="23" cy="18" r="3" fill="#bbf7d0"/>
+
+  <circle cx="9"  cy="27" r="3" fill="#bbf7d0"/>
+  <circle cx="16" cy="27" r="3" fill="#bbf7d0"/>
+  <circle cx="23" cy="27" r="3" fill="#bbf7d0"/>
+</svg>

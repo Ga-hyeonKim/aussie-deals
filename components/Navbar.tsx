@@ -27,10 +27,8 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-        <Link href="/" className="flex items-center gap-1.5">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 shrink-0 text-green-600">
-            <path fillRule="evenodd" d="M5.25 2.25a3 3 0 00-3 3v4.318a3 3 0 00.879 2.121l9.58 9.581c.92.92 2.39 1.033 3.443.263a18.212 18.212 0 005.042-5.043c.77-1.052.657-2.52-.263-3.442l-9.58-9.581a3 3 0 00-2.122-.879H5.25zM6.375 7.5a1.125 1.125 0 100-2.25 1.125 1.125 0 000 2.25z" clipRule="evenodd" />
-          </svg>
+        <Link href="/" className="flex items-center gap-2">
+          <Image src="/logo.svg" alt="AussieDeals logo" width={26} height={31} />
           <span className="text-lg leading-none">
             <span className="font-black text-green-600">Aussie</span><span className="font-bold text-gray-800">Deals</span>
           </span>
