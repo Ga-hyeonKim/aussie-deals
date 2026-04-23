@@ -38,6 +38,24 @@ model Product {
   @@index([store, validFrom, validTo])
 }
 
+model StoreProduct {
+  id        String   @id @default(cuid())
+  store     Store
+  name      String
+  brand     String?
+  category  String
+  unit      String?
+  price     Float
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  favorites Favorite[]
+
+  @@unique([store, name])
+  @@index([store, category])
+  @@map("store_products")
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -83,14 +101,15 @@ model Session {
 }
 
 model Favorite {
-  id          String   @id @default(cuid())
-  userId      String   @map("user_id")
-  productName String   @map("product_name")
-  createdAt   DateTime @default(now())
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  storeProductId String       @map("store_product_id")
+  createdAt      DateTime     @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeProduct StoreProduct @relation(fields: [storeProductId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, productName])
+  @@unique([userId, storeProductId])
   @@map("favorites")
 }
 

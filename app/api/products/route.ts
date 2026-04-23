@@ -21,5 +21,21 @@ export async function GET(request: NextRequest) {
     orderBy: { discountPercent: "desc" },
   })
 
-  return NextResponse.json(products)
+  const storeProducts = await prisma.storeProduct.findMany({
+    where: {
+      OR: products.map(p => ({ store: p.store, name: p.name })),
+    },
+    select: { id: true, store: true, name: true },
+  })
+
+  const spMap = new Map(
+    storeProducts.map(sp => [`${sp.store}:${sp.name}`, sp.id])
+  )
+
+  const result = products.map(p => ({
+    ...p,
+    storeProductId: spMap.get(`${p.store}:${p.name}`) ?? null,
+  }))
+
+  return NextResponse.json(result)
 }

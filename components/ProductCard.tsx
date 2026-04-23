@@ -4,7 +4,7 @@ import FavoriteButton from "@/components/FavoriteButton"
 import CartButton from "@/components/CartButton"
 
 type Props = {
-  product: ProductModel
+  product: ProductModel & { storeProductId?: string | null }
 }
 
 export default function ProductCard({ product }: Props) {
@@ -35,7 +35,9 @@ export default function ProductCard({ product }: Props) {
               -{product.discountPercent}%
             </span>
           )}
-          <FavoriteButton productId={product.id} />
+          {product.storeProductId && (
+            <FavoriteButton storeProductId={product.storeProductId} />
+          )}
         </div>
       </div>
 
