@@ -8,8 +8,8 @@ const STORAGE_KEY = "aussiedeals_favorites"
 
 type FavoritesContextValue = {
   favorites: Set<string>
-  toggle: (storeProductId: string) => void
-  isFavorited: (storeProductId: string) => boolean
+  toggle: (id: string, isProductFallback?: boolean) => void
+  isFavorited: (id: string) => boolean
 }
 
 const FavoritesContext = createContext<FavoritesContextValue | null>(null)
@@ -18,6 +18,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession()
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const mergedRef = useRef(false)
+  // maps productId → storeProductId for deals favorited before StoreProduct existed
+  const productToStoreRef = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     if (status === "loading") return
@@ -67,23 +69,38 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     }
   }, [session?.user?.id, status])
 
-  const toggle = useCallback((storeProductId: string) => {
+  const toggle = useCallback((id: string, isProductFallback = false) => {
     setFavorites((prev) => {
       const next = new Set(prev)
-      const removing = next.has(storeProductId)
+      const removing = next.has(id)
 
       if (removing) {
-        next.delete(storeProductId)
+        next.delete(id)
       } else {
-        next.add(storeProductId)
+        next.add(id)
       }
 
       if (session?.user?.id) {
+        let body: Record<string, string>
+        if (isProductFallback) {
+          const resolved = productToStoreRef.current.get(id)
+          body = resolved ? { storeProductId: resolved } : { productId: id }
+        } else {
+          body = { storeProductId: id }
+        }
+
         fetch("/api/favorites", {
           method: removing ? "DELETE" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ storeProductId }),
+          body: JSON.stringify(body),
         })
+          .then(res => res.json())
+          .then(data => {
+            if (!removing && isProductFallback && data.storeProductId) {
+              productToStoreRef.current.set(id, data.storeProductId)
+              setFavorites(prev2 => new Set([...prev2, data.storeProductId]))
+            }
+          })
       } else {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]))
       }
@@ -93,7 +110,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   }, [session?.user?.id])
 
   const isFavorited = useCallback(
-    (storeProductId: string) => favorites.has(storeProductId),
+    (id: string) => favorites.has(id),
     [favorites]
   )
 

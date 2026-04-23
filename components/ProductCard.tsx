@@ -35,9 +35,7 @@ export default function ProductCard({ product }: Props) {
               -{product.discountPercent}%
             </span>
           )}
-          {product.storeProductId && (
-            <FavoriteButton storeProductId={product.storeProductId} />
-          )}
+          <FavoriteButton storeProductId={product.storeProductId} productId={product.id} />
         </div>
       </div>
 
