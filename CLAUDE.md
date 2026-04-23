@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**AussiDeals** (working title) — A weekly grocery deals aggregator for Australian supermarkets (Woolworths & Coles), focused on helping users actually save money while shopping, not just listing discounts.
+**AussieDeals** — A weekly grocery deals aggregator for Australian supermarkets (Woolworths & Coles), focused on helping users actually save money while shopping, not just listing discounts.
 
 **Primary purpose**: Learning project. The developer is a bootcamp graduate (6 months, JS/Python/React/MySQL) and ECU Computer Science student (Year 1). Every technical decision should maximize learning value — prefer industry-standard tools over convenience shortcuts, and explain the *why* behind architectural choices.
 
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Web app hosting | Vercel | Best-in-class Next.js deployment |
 | Scraper runner | GitHub Actions (cron) | Supports Playwright; Vercel serverless cannot run a browser |
 | Charts | Recharts | Native React components, lightweight, SSR-friendly with "use client" |
-| Auth (post-MVP) | NextAuth.js v5 | OAuth + session handling |
+| Auth | NextAuth.js v5 | OAuth + session handling |
 
 ## Commands
 
@@ -35,8 +35,14 @@ npx prisma studio
 # Prisma: generate client after schema changes
 npx prisma generate
 
-# Run data fetcher manually (local dev)
+# Run weekly specials scraper manually
 npx tsx scripts/fetch-woolworths.ts
+
+# Run full catalog scraper (all 15 categories, ~53K products → StoreProduct table)
+cd scripts && npx tsx fetch-woolworths-all.ts
+
+# Re-run only DB save (if collection succeeded but DB failed)
+cd scripts && npx tsx fetch-woolworths-all.ts --from-json
 ```
 
 ## Architecture
@@ -46,9 +52,11 @@ npx tsx scripts/fetch-woolworths.ts
 Woolworths' API requires an active browser session — direct HTTP calls are blocked. Playwright (a headless browser) is needed to establish a session and then call the API from within the page context. Vercel's serverless functions cannot run a browser, so the scraper runs separately on GitHub Actions.
 
 ```
-GitHub Actions (cron: every Wednesday)
-  └── runs Playwright scraper
-  └── upserts products into Neon PostgreSQL
+GitHub Actions
+  ├── fetch-woolworths.yml      (cron: every Wednesday)
+  │     └── upserts weekly specials → Product table
+  └── fetch-woolworths-all.yml  (cron: every other Monday)
+        └── upserts full catalog  → StoreProduct table
 
 Vercel (Next.js app)
   └── reads from Neon PostgreSQL
@@ -56,45 +64,80 @@ Vercel (Next.js app)
 ```
 
 ### Data Pipeline
-- **Scraper entry point**: `scripts/fetch-woolworths.ts` — standalone script, runs in GitHub Actions
-- **Workflow file**: `.github/workflows/fetch-woolworths.yml` — cron schedule, sets env vars, runs script
-- Coles: no stable API yet. Do NOT block MVP on this.
+- `scripts/fetch-woolworths.ts` — weekly specials scraper (isSpecial: true)
+- `scripts/fetch-woolworths-all.ts` — full catalog scraper (all 15 categories, ~53K products)
+  - Saves intermediate `scripts/woolworths-dump.json` after collection (before DB save)
+  - Supports `--from-json` flag to retry DB save without re-collecting
+- `scripts/` is excluded from `tsconfig.json` (Next.js build only)
+- Coles: web scraping still broken as of 2026-04-17. App API disabled for Coles. Do NOT block on this.
 
-The DB schema uses a `Store` enum (`WOOLWORTHS | COLES`) so both stores share the same `Product` table. The comparison UI works automatically once Coles data exists.
+### Two-table product design
+
+| Table | Purpose | Populated by |
+|-------|---------|-------------|
+| `Product` | Weekly specials only (has salePrice, validFrom/To, discountPercent) | fetch-woolworths.ts (weekly) |
+| `StoreProduct` | Full permanent catalog (current price, no validity window) | fetch-woolworths-all.ts (bi-weekly) |
+
+`Favorite` links to `StoreProduct` — users watch products regardless of sale status. When a favorited `StoreProduct` matches a current `Product` (same store+name), the favorites page shows an ON SALE badge.
+
+`CartItem` links to `Product` — cart is scoped to this week's deals only.
 
 ### Cross-Store Product Matching
 When Coles data becomes available, match same products across stores using a `normalizedName` column on `Product` (lowercase, stripped of brand/size variations) with an index. No join table needed — just WHERE on normalizedName + different store. Cart comparison (7) uses this to show total price at each store.
 
 ### Key DB Models
-- `Product` — weekly special item (store, name, brand, category, unit, originalPrice, salePrice, discountPercent, validFrom, validTo)
-- `User` — added post-MVP with NextAuth
-- `Favorite` — watchlist/wishlist items (products user wants to track regardless of current sale status; triggers notifications when on sale)
-- `CartItem` — this week's shopping list (on-sale items user plans to buy this trip; acts as in-store checklist)
-- `PriceHistory` — append-only log of prices per product for history graphs
+- `Product` — weekly special (store, name, brand, category, unit, originalPrice, salePrice, discountPercent, imageUrl, validFrom, validTo)
+- `StoreProduct` — permanent catalog item (store, name, brand, category, unit, price, imageUrl). ~53K Woolworths products as of 2026-04-23
+- `User` — NextAuth user (Google OAuth)
+- `Favorite` — watchlist: User → StoreProduct. Shown with ON SALE badge if currently in Product table
+- `CartItem` — this week's shopping list: User → Product
+
+### DB Indexes (manually applied in Neon SQL Editor)
+```sql
+-- Fast name search on favorites page (pg_trgm extension)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS store_products_name_trgm_idx
+  ON store_products USING GIN (name gin_trgm_ops);
+```
 
 ### Auth Strategy
-- **MVP**: Favorites stored in `localStorage` (no login required)
-- **Post-MVP**: Migrate to DB-backed favorites with NextAuth.js (Google/email login)
+- Google OAuth via NextAuth.js v5
+- JWT sessions, 30-day maxAge
+- Favorites: localStorage for logged-out users, DB for logged-in users
+- On first login: localStorage favorites auto-merge into DB
 
 ### Folder Structure
 ```
 app/
-  page.tsx                  # Weekly deals home
-  search/page.tsx           # Search results
-  favorites/page.tsx        # Saved favorites
+  page.tsx                    # Weekly deals home
+  search/page.tsx             # Search results
+  favorites/page.tsx          # Watchlist — search catalog + saved items with ON SALE status
+  cart/page.tsx               # This week's shopping list
   api/
-    products/               # Product query endpoints (read-only)
+    products/                 # Weekly specials query (includes storeProductId lookup)
+    favorites/                # Favorites CRUD — accepts storeProductId or productId
+    store-products/           # StoreProduct search (q= param, used by favorites search bar)
+    cart/                     # Cart CRUD
 components/
-  ProductCard.tsx
-  FilterBar.tsx
-  SearchBar.tsx
+  ProductCard.tsx             # Deal card with FavoriteButton + CartButton
+  FavoriteButton.tsx          # Heart toggle — storeProductId if available, else productId fallback
+  FilterBar.tsx               # Mobile: <select> dropdown / Desktop: pill buttons
+  Navbar.tsx                  # Logo (AussieDeals_LOGO.png) + nav icons + profile dropdown
+hooks/
+  useFavorites.tsx            # Favorites state — DB when logged in, localStorage when not
+  useCart.tsx                 # Cart state
 lib/
-  prisma.ts                 # Prisma client singleton
+  prisma.ts                   # Prisma client singleton
 scripts/
-  fetch-woolworths.ts       # Scraper entry point (run via GitHub Actions)
+  fetch-woolworths.ts         # Weekly specials scraper
+  fetch-woolworths-all.ts     # Full catalog scraper (--from-json flag)
+  woolworths-dump.json        # Intermediate dump (gitignored ideally)
 .github/
   workflows/
-    fetch-woolworths.yml    # Cron job definition
+    fetch-woolworths.yml      # Weekly specials cron
+    fetch-woolworths-all.yml  # Full catalog cron (every other Monday)
+public/
+  AussieDeals_LOGO.png        # Custom logo (cart + AU map + % tag)
 prisma/
   schema.prisma
 ```
@@ -109,40 +152,47 @@ prisma/
 - [x] **4. Favorites** — localStorage-based save/unsave, favorites page
 
 ### Phase 2 (in progress)
-- [ ] **5. Coles integration** — add Coles fetcher, price comparison UI unlocks automatically (blocked: Coles specials page still broken as of 2026-04-17)
+- [ ] **5. Coles integration** — blocked: Coles web broken as of 2026-04-17 (app works, web doesn't). Do NOT block other features on this.
 - [x] **6. User auth** — NextAuth.js v5, Google OAuth, Prisma adapter, JWT sessions
-- [x] **6a. Navbar profile UI** — show Google avatar + name, dropdown menu (Profile, Sign out)
-- [x] **6b. Session maxAge** — keep default 30 days (suits weekly shopping cycle)
-- [x] **6c. Favorites/Cart split** — separate Favorites (watchlist: track items, get notified on sale) from Cart (this week's shopping list: on-sale items to buy now, in-store checklist). CartItem DB model, cart API, cart page, mobile FAB, navbar icons
-- [x] **6d. Favorites localStorage → DB migration** — logged-in users save favorites to DB via Favorite model; localStorage merge on login, API-backed CRUD
-- [ ] **6e. Session-based user features** — cross-device sync, remote logout, or login history (builds on session infra for CV-worthy functionality)
-- [ ] **6f. Mobile UI polish** — (1) Navbar: Favorites → heart icon to match Search/Cart icons (2) ProductCard: fix heart button overflow on small screens (shrink-0) (3) Category filter: replace horizontal scroll with dropdown/bottom-sheet for mobile (4) Cart: add delete confirmation (bottom-sheet + undo vs modal — compare both) (5) AussieDeals text logo → styled text or SVG logo
+- [x] **6a. Navbar profile UI** — Google avatar + name, dropdown (Sign out)
+- [x] **6b. Session maxAge** — 30 days default
+- [x] **6c. Favorites/Cart split** — Favorites = watchlist (StoreProduct), Cart = this week's checklist (Product). CartItem model, cart API, cart page, mobile FAB, navbar icons
+- [x] **6d. Favorites localStorage → DB** — DB-backed for logged-in users, localStorage merge on login
+- [x] **6e. Cross-device sync** — automatic via 6d (same Google account = same DB favorites)
+- [x] **6f. Mobile UI polish**
+  - [x] Navbar: Favorites text → heart SVG icon
+  - [x] ProductCard: heart button `shrink-0` overflow fix
+  - [x] Category filter: `<select>` dropdown on mobile, pill buttons on desktop
+  - [x] Cart: immediate delete + 3s undo toast (no modal)
+  - [x] Logo: custom `AussieDeals_LOGO.png` (cart + AU map + % tag, cute bubbly style)
+- [x] **Full product catalog** — `fetch-woolworths-all.ts` scrapes all 15 categories (~53K unique products) into `StoreProduct` table. Runs bi-weekly via GitHub Actions.
+- [x] **Favorites search** — search bar on favorites page queries `StoreProduct` via `/api/store-products`. ON SALE badge when favorited item matches current weekly deal.
 - [ ] **7. Cart comparison** — compare Cart total at Woolworths vs Coles (requires Coles data)
-- [ ] **8. Preferred stores** — user selects specific store locations (e.g. "Woolies near uni", "Coles near home"); filters deals to only relevant stores. Stored on User profile.
-- [ ] **9. Personalized recommendations** — based on favorites/categories/preferred stores, "this week's deals for you"
-- [ ] **10. Price history** — graph price changes over time using **Recharts**, surface "real deal" badge. Requires product detail page (`/product/[id]`).
-- [ ] **11. Notifications** — email/push when favorited item goes on sale
+- [ ] **8. Preferred stores** — user selects specific store locations; filters deals. Stored on User profile.
+- [ ] **9. Personalized recommendations** — based on favorites/categories, "this week's deals for you"
+- [ ] **10. Price history** — graph price changes over time using Recharts. Requires product detail page (`/product/[id]`) and `PriceHistory` model.
+- [ ] **11. Notifications** — email/push when favorited StoreProduct appears in weekly deals
 
-### Phase 3 (new features)
-- [ ] **12. "Real deal" badge** — compare current sale price against price history average to flag genuinely good deals
-- [ ] **13. Weekly digest email** — opt-in newsletter with trending items (most favorited by other users), items cheaper than usual, personalised picks. Only for users who subscribe.
-- [ ] **14. Share deals** — copy link / share to social (KakaoTalk, etc.) for individual deals
-- [ ] **15. PWA** — progressive web app with home screen install for mobile in-store use
+### Phase 3
+- [ ] **12. "Real deal" badge** — compare salePrice vs PriceHistory average to flag genuinely good deals
+- [ ] **13. Weekly digest email** — opt-in newsletter with trending/cheaper-than-usual/personalised picks
+- [ ] **14. Share deals** — copy link / KakaoTalk share for individual deals
+- [ ] **15. PWA** — home screen install for mobile in-store use
 
 ## Data Notes
 
-- **Woolworths**: Requires Playwright browser session. Uses `/apis/ui/browse/category` POST endpoint with `isSpecial: true`. Scrapes per category (15 categories). Previously working code exists at `Desktop/au_discount_info/backend/src/scrapers/woolworths.js`.
-- **Coles**: No stable unofficial API as of project start. Revisit with network tab inspection. Do NOT block MVP on this.
-- Weekly specials update every **Wednesday** in Australia (AEST)
-- Products are scoped by `validFrom`/`validTo` dates — always filter by current week when displaying
+- **Woolworths weekly specials**: `isSpecial: true` in `/apis/ui/browse/category` POST. Updates every Wednesday (AEST). Scoped by `validFrom`/`validTo`.
+- **Woolworths full catalog**: same endpoint with `isSpecial: false`. ~53K unique products across 15 categories (Beauty/Personal Care/Baby/Pet each ~12K). Takes ~40 min to scrape.
+- **Coles**: web scraping broken. App works but no API access yet.
+- Always filter `Product` by current date when displaying deals.
+- `StoreProduct` has no date scope — it's a permanent catalog.
 
 ## Learning Goals Tracker
 
-This project is designed to build real-world skills in:
 - Next.js App Router (server components, API routes, caching)
 - PostgreSQL + Prisma (schema design, migrations, relations)
 - Data pipeline design (cron jobs, upsert patterns, Playwright scraping)
 - CI/CD with GitHub Actions (env secrets, scheduled workflows)
 - Deployment on Vercel (env vars, serverless functions)
-- Auth patterns (JWT, sessions, OAuth)
+- Auth patterns (JWT, sessions, OAuth, localStorage→DB migration)
 - AI-assisted development & orchestration (using Claude Code effectively)
