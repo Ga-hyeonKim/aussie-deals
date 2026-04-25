@@ -5,7 +5,8 @@ import Navbar from "@/components/Navbar";
 import AuthProvider from "@/components/AuthProvider";
 import { FavoritesProvider } from "@/hooks/useFavorites";
 import { CartProvider } from "@/hooks/useCart";
-import CartFab from "@/components/CartFab";
+import CartFab from "@/components/CartFab"
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,7 @@ export default function RootLayout({
               <Navbar />
               {children}
               <CartFab />
+              <ServiceWorkerRegister />
             </CartProvider>
           </FavoritesProvider>
         </AuthProvider>
