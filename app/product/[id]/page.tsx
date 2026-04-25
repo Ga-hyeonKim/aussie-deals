@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma"
 import Image from "next/image"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import FavoriteButton from "@/components/FavoriteButton"
 import CartButton from "@/components/CartButton"
+import BackButton from "@/components/BackButton"
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -21,9 +21,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link href="/" className="mb-6 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
-          ← Back to deals
-        </Link>
+        <BackButton />
 
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           {product.imageUrl && (
