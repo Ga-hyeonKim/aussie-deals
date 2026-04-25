@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useFavorites } from "@/hooks/useFavorites"
 import Image from "next/image"
+import Link from "next/link"
 import FavoriteButton from "@/components/FavoriteButton"
 import type { StoreProductModel } from "@/app/generated/prisma/models"
 import type { ProductModel } from "@/app/generated/prisma/models"
@@ -121,8 +122,9 @@ export default function FavoritesPage() {
               {favList.map(fav => (
                 <div
                   key={fav.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                  className="relative flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
                 >
+                  <Link href={`/store-product/${fav.storeProductId}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={fav.storeProduct.name} />
                   {fav.storeProduct.imageUrl && (
                     <div className="relative mx-auto h-28 w-28">
                       <Image src={fav.storeProduct.imageUrl} alt={fav.storeProduct.name} fill sizes="112px" className="object-contain" />
@@ -131,12 +133,14 @@ export default function FavoritesPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs uppercase tracking-wide text-gray-400">{fav.storeProduct.store}</p>
-                      <h2 className="text-sm font-semibold leading-tight text-gray-900">{fav.storeProduct.name}</h2>
+                      <h2 className="truncate text-sm font-semibold leading-tight text-gray-900">{fav.storeProduct.name}</h2>
                       {fav.storeProduct.brand && (
-                        <p className="text-xs text-gray-500">{fav.storeProduct.brand}</p>
+                        <p className="truncate text-xs text-gray-500">{fav.storeProduct.brand}</p>
                       )}
                     </div>
-                    <FavoriteButton storeProductId={fav.storeProductId} productId={fav.storeProductId} />
+                    <div className="relative z-10 shrink-0">
+                      <FavoriteButton storeProductId={fav.storeProductId} productId={fav.storeProductId} />
+                    </div>
                   </div>
 
                   {fav.currentDeal ? (
