@@ -26,7 +26,7 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-1.5">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-2">
         <Link href="/">
           <Image src="/AussieDeals_Logo_latest_crop.png" alt="AussieDeals" height={30} width={140} className="object-contain" />
         </Link>

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import FavoriteButton from "@/components/FavoriteButton"
 import CartButton from "@/components/CartButton"
 import BackButton from "@/components/BackButton"
+import PriceHistoryChart from "@/components/PriceHistoryChart"
 
 export default async function StoreProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -84,17 +85,9 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
 
         {/* Coming soon */}
         <div className="mt-4 space-y-3">
-          <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-700">Price History</p>
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-600">Coming soon</span>
-            </div>
-            <div className="flex h-16 items-end gap-1">
-              {[60, 45, 60, 60, 40, 55, 35].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t bg-gray-100" style={{ height: `${h}%` }} />
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-400">Track how this price changes week to week.</p>
+          <div className="rounded-2xl border border-gray-200 bg-white p-5">
+            <p className="mb-3 text-sm font-semibold text-gray-700">Price History</p>
+            <PriceHistoryChart storeProductId={storeProduct.id} currentPrice={storeProduct.price} />
           </div>
 
           <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5">

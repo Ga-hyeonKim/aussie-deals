@@ -6,16 +6,19 @@ import path from "path";
 config({ path: path.join(__dirname, "../.env") });
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import ws from "ws";
+import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 
 chromium.use(StealthPlugin());
 
+neonConfig.webSocketConstructor = ws;
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 const DUMP_PATH = path.join(__dirname, "woolworths-dump.json");
-const BATCH_SIZE = 25;
+const BATCH_SIZE = 50;
 
 const CATEGORIES = [
   { id: "1-E5BEE36E", name: "Fruit & Veg" },
@@ -125,42 +128,34 @@ async function fetchCategoryAll(
   return products;
 }
 
-async function upsertBatch(products: ParsedProduct[], batchIndex: number): Promise<void> {
-  try {
-    await prisma.$transaction(
-      products.map(p =>
-        prisma.storeProduct.upsert({
-          where: { store_name: { store: "WOOLWORTHS", name: p.name } },
-          update: {
-            brand: p.brand,
-            category: p.category,
-            unit: p.unit,
-            price: p.price,
-            imageUrl: p.imageUrl,
-          },
-          create: {
-            store: "WOOLWORTHS",
-            name: p.name,
-            brand: p.brand,
-            category: p.category,
-            unit: p.unit,
-            price: p.price,
-            imageUrl: p.imageUrl,
-          },
-        })
-      ),
-    );
-  } catch (err) {
-    console.error(`[Woolworths All] 배치 ${batchIndex} 실패, 개별 저장으로 재시도...`, err);
-    // fallback: individual upserts
-    for (const p of products) {
-      await prisma.storeProduct.upsert({
+async function upsertBatch(products: ParsedProduct[]): Promise<void> {
+  const results = await Promise.all(
+    products.map(async p => {
+      const sp = await prisma.storeProduct.upsert({
         where: { store_name: { store: "WOOLWORTHS", name: p.name } },
         update: { brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
         create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
-      }).catch(e => console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message));
-    }
+        select: { id: true },
+      }).catch(e => { console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message); return null; });
+      return sp ? { id: sp.id, price: p.price } : null;
+    })
+  );
+
+  const history = results.filter(Boolean).map(r => ({
+    storeProductId: r!.id,
+    price: r!.price,
+    isOnSale: false,
+  }));
+
+  if (history.length > 0) {
+    await prisma.priceHistory.createMany({ data: history }).catch(() => {});
   }
+}
+
+function fmt(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
 async function saveToDb(products: ParsedProduct[]) {
@@ -170,17 +165,20 @@ async function saveToDb(products: ParsedProduct[]) {
   await prisma.$queryRaw`SELECT 1`;
   console.log("[Woolworths All] DB 연결 확인 완료.");
 
+  const startTime = Date.now();
   let saved = 0;
   for (let i = 0; i < products.length; i += BATCH_SIZE) {
     const batch = products.slice(i, i + BATCH_SIZE);
-    await upsertBatch(batch, Math.floor(i / BATCH_SIZE));
+    await upsertBatch(batch);
     saved += batch.length;
-    if (saved % 500 === 0 || saved >= products.length) {
-      console.log(`[Woolworths All] DB 저장 진행: ${saved}/${products.length}`);
-    }
+    const elapsed = Date.now() - startTime;
+    const rate = saved / (elapsed / 1000);
+    const remaining = (products.length - saved) / rate;
+    console.log(`[Woolworths All] ${saved}/${products.length} — 경과 ${fmt(elapsed)}, 예상 남은 시간 ${fmt(remaining * 1000)}`);
   }
 
-  console.log(`[Woolworths All] DB 저장 완료: ${products.length}개`);
+  const total = Date.now() - startTime;
+  console.log(`[Woolworths All] DB 저장 완료: ${products.length}개 (총 ${fmt(total)})`);
 }
 
 function deduplicate(products: ParsedProduct[]): ParsedProduct[] {
