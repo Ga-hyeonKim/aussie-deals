@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     title: "AussieDeals",
   },
   icons: {
-    apple: "/aussiedeals_icon_180.png",
+    apple: "/icons/apple_touch_icon_180_final.png",
   },
 };
 
