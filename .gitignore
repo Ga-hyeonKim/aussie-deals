@@ -47,3 +47,6 @@ next-env.d.ts
 client_secret*.json
 
 /app/generated/prisma
+
+# scraper intermediate dump
+scripts/woolworths-dump.json
