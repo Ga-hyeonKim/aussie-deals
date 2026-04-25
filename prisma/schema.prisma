@@ -39,21 +39,35 @@ model Product {
 }
 
 model StoreProduct {
-  id        String   @id @default(cuid())
-  store     Store
-  name      String
-  brand     String?
-  category  String
-  unit      String?
-  price     Float
-  imageUrl  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  favorites Favorite[]
+  id           String        @id @default(cuid())
+  store        Store
+  name         String
+  brand        String?
+  category     String
+  unit         String?
+  price        Float
+  imageUrl     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  favorites    Favorite[]
+  priceHistory PriceHistory[]
 
   @@unique([store, name])
   @@index([store, category])
   @@map("store_products")
+}
+
+model PriceHistory {
+  id             String       @id @default(cuid())
+  storeProductId String       @map("store_product_id")
+  price          Float
+  isOnSale       Boolean      @default(false)
+  recordedAt     DateTime     @default(now())
+
+  storeProduct   StoreProduct @relation(fields: [storeProductId], references: [id], onDelete: Cascade)
+
+  @@index([storeProductId, recordedAt])
+  @@map("price_history")
 }
 
 model User {

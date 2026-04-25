@@ -189,13 +189,7 @@ async function main() {
   let upserted = 0;
   for (const p of allProducts) {
     await prisma.product.upsert({
-      where: {
-        store_name_validFrom: {
-          store: "WOOLWORTHS",
-          name: p.name,
-          validFrom,
-        },
-      },
+      where: { store_name_validFrom: { store: "WOOLWORTHS", name: p.name, validFrom } },
       update: {
         salePrice: p.salePrice,
         originalPrice: p.originalPrice,
@@ -219,6 +213,26 @@ async function main() {
         validTo,
       },
     });
+
+    const storeProduct = await prisma.storeProduct.upsert({
+      where: { store_name: { store: "WOOLWORTHS", name: p.name } },
+      update: { price: p.originalPrice ?? p.salePrice, imageUrl: p.imageUrl },
+      create: {
+        store: "WOOLWORTHS",
+        name: p.name,
+        brand: p.brand,
+        category: p.category,
+        unit: p.unit,
+        price: p.originalPrice ?? p.salePrice,
+        imageUrl: p.imageUrl,
+      },
+      select: { id: true },
+    });
+
+    await prisma.priceHistory.create({
+      data: { storeProductId: storeProduct.id, price: p.salePrice, isOnSale: true },
+    }).catch(() => {});
+
     upserted++;
   }
 
