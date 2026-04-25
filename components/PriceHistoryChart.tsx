@@ -61,8 +61,8 @@ export default function PriceHistoryChart({ storeProductId, currentPrice }: Prop
           <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
           <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} tickFormatter={v => `$${v}`} />
           <Tooltip
-            formatter={(v: number, _: string, props: { payload?: { isOnSale?: boolean } }) => [
-              `$${v.toFixed(2)}${props.payload?.isOnSale ? " 🏷️ Sale" : ""}`,
+            formatter={(v, _, props) => [
+              `$${Number(v).toFixed(2)}${props.payload?.isOnSale ? " 🏷️ Sale" : ""}`,
               "Price"
             ]}
             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
