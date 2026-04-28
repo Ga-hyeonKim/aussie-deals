@@ -1,0 +1,37 @@
+name: Fetch Coles Specials
+
+on:
+  schedule:
+    # Every Tuesday 21:30 UTC = Wednesday 05:30 AWST
+    # 30 min after Woolworths to avoid Neon connection contention
+    - cron: "30 21 * * 2"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Push schema to DB
+        run: npx prisma db push --accept-data-loss
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # No Playwright needed — Coles uses direct HTTP fetch
+
+      - name: Run Coles specials fetcher
+        run: npx tsx scripts/fetch-coles.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

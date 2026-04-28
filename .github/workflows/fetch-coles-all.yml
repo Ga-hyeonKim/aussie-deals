@@ -1,0 +1,37 @@
+name: Fetch Coles Full Catalog
+
+on:
+  schedule:
+    # Every other Monday at 21:00 UTC = Tuesday 05:00 AWST
+    # Same schedule as Woolworths full catalog
+    - cron: "0 21 * * 1"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Push schema to DB
+        run: npx prisma db push --accept-data-loss
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # No Playwright needed — Coles uses direct HTTP fetch
+
+      - name: Run Coles full catalog fetcher
+        run: npx tsx scripts/fetch-coles-all.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
