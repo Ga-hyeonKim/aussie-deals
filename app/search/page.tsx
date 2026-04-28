@@ -47,7 +47,7 @@ export default async function SearchPage({ searchParams }: Props) {
               <Link href={`/store-product/${product.id}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={product.name} />
               {product.imageUrl && (
                 <div className="relative mx-auto h-20 w-20">
-                  <Image src={product.imageUrl} alt={product.name} fill sizes="80px" className="object-contain" />
+                  <Image src={product.imageUrl} alt={product.name} fill sizes="80px" unoptimized className="object-contain" />
                 </div>
               )}
               <div className="min-w-0">

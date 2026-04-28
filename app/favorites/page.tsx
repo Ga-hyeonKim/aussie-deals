@@ -95,7 +95,7 @@ export default function FavoritesPage() {
                   >
                     {product.imageUrl && (
                       <div className="relative mx-auto h-24 w-24">
-                        <Image src={product.imageUrl} alt={product.name} fill sizes="96px" className="object-contain" />
+                        <Image src={product.imageUrl} alt={product.name} fill sizes="96px" unoptimized className="object-contain" />
                       </div>
                     )}
                     <div className="flex items-start justify-between gap-2">
@@ -136,7 +136,7 @@ export default function FavoritesPage() {
                   <Link href={`/store-product/${fav.storeProductId}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={fav.storeProduct.name} />
                   {fav.storeProduct.imageUrl && (
                     <div className="relative mx-auto h-28 w-28">
-                      <Image src={fav.storeProduct.imageUrl} alt={fav.storeProduct.name} fill sizes="112px" className="object-contain" />
+                      <Image src={fav.storeProduct.imageUrl} alt={fav.storeProduct.name} fill sizes="112px" unoptimized className="object-contain" />
                     </div>
                   )}
                   <div className="flex items-start justify-between gap-2">
