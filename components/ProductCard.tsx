@@ -26,12 +26,17 @@ export default function ProductCard({ product }: Props) {
       )}
 
       <div className="min-w-0">
-        <p className="text-xs text-gray-400 uppercase tracking-wide">{product.store}</p>
+        <p className={`text-xs uppercase tracking-wide font-medium ${product.store === "COLES" ? "text-red-500" : "text-green-600"}`}>
+          {product.store === "COLES" ? "Coles" : "Woolworths"}
+        </p>
         <h2 className="truncate text-sm font-semibold text-gray-900 leading-tight">{product.name}</h2>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-base font-bold text-gray-900">${product.salePrice.toFixed(2)}</span>
+        {product.originalPrice && (
+          <span className="text-xs text-gray-400 line-through">${product.originalPrice.toFixed(2)}</span>
+        )}
         {product.discountPercent && (
           <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700">
             -{product.discountPercent}%

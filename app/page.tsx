@@ -1,7 +1,5 @@
-import { Suspense } from "react"
 import { prisma } from "@/lib/prisma"
 import DealsGrid from "@/components/DealsGrid"
-import SearchBar from "@/components/SearchBar"
 
 function formatDateRange(validFrom: Date): string {
   const from = new Date(validFrom)
@@ -22,10 +20,9 @@ export default async function Home() {
       validFrom: { lte: now },
       validTo: { gte: now },
     },
-    orderBy: { discountPercent: "desc" },
+    orderBy: { discountPercent: { sort: "desc", nulls: "last" } },
   })
 
-  const categories = [...new Set(products.map((p) => p.category))].sort()
   const dateRange = products.length > 0 ? formatDateRange(products[0].validFrom) : null
 
   return (
@@ -34,9 +31,9 @@ export default async function Home() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">This week&apos;s deals</h1>
           {dateRange ? (
-            <p className="mt-1 text-gray-500">Woolworths specials · {dateRange}</p>
+            <p className="mt-1 text-gray-500">Woolworths & Coles specials · {dateRange}</p>
           ) : (
-            <p className="mt-1 text-gray-500">Woolworths weekly specials</p>
+            <p className="mt-1 text-gray-500">Weekly specials</p>
           )}
         </div>
 
@@ -45,14 +42,7 @@ export default async function Home() {
             This week&apos;s specials have not been updated yet.
           </p>
         ) : (
-          <>
-            <div className="mb-6">
-              <Suspense>
-                <SearchBar />
-              </Suspense>
-            </div>
-            <DealsGrid products={products} categories={categories} />
-          </>
+          <DealsGrid products={products} />
         )}
       </div>
     </main>

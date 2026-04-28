@@ -50,3 +50,5 @@ client_secret*.json
 
 # scraper intermediate dump
 scripts/woolworths-dump.json
+scripts/coles-dump.json
+scripts/coles-all-dump.json

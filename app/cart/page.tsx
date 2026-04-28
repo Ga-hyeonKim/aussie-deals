@@ -14,11 +14,17 @@ type CartItemWithProduct = {
   product: ProductModel
 }
 
+const STORE_LABELS: Record<string, { label: string; active: string }> = {
+  WOOLWORTHS: { label: "Woolworths", active: "bg-green-600 text-white" },
+  COLES:      { label: "Coles",      active: "bg-red-600 text-white" },
+}
+
 export default function CartPage() {
   const { data: session } = useSession()
   const { toggle } = useCart()
   const [items, setItems] = useState<CartItemWithProduct[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedStore, setSelectedStore] = useState<string | null>(null)
   const [undoItem, setUndoItem] = useState<CartItemWithProduct | null>(null)
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -29,7 +35,11 @@ export default function CartPage() {
     }
     fetch("/api/cart")
       .then((res) => res.json())
-      .then((data) => setItems(data))
+      .then((data: CartItemWithProduct[]) => {
+        setItems(data)
+        const stores = [...new Set(data.map(i => i.product.store))].sort()
+        if (stores.length > 0) setSelectedStore(stores[0])
+      })
       .finally(() => setLoading(false))
   }, [session?.user])
 
@@ -47,9 +57,12 @@ export default function CartPage() {
   }
 
   const now = new Date()
-  const activeItems = items.filter((i) => new Date(i.product.validTo) >= now)
-  const expiredItems = items.filter((i) => new Date(i.product.validTo) < now)
+  const stores = [...new Set(items.map(i => i.product.store))].sort()
+  const storeItems = selectedStore ? items.filter(i => i.product.store === selectedStore) : items
+  const activeItems = storeItems.filter((i) => new Date(i.product.validTo) >= now)
+  const expiredItems = storeItems.filter((i) => new Date(i.product.validTo) < now)
   const activeTotal = activeItems.reduce((sum, i) => sum + i.product.salePrice, 0)
+  const totalActiveCount = items.filter((i) => new Date(i.product.validTo) >= now).length
 
   function handleRemove(productId: string) {
     const item = items.find((i) => i.productId === productId)
@@ -79,7 +92,7 @@ export default function CartPage() {
           <p className="mt-1 text-gray-500">
             {items.length === 0 && !loading
               ? "Your cart is empty"
-              : `${activeItems.length} item${activeItems.length !== 1 ? "s" : ""} on sale`}
+              : `${totalActiveCount} item${totalActiveCount !== 1 ? "s" : ""} on sale`}
           </p>
         </div>
 
@@ -91,6 +104,24 @@ export default function CartPage() {
           </p>
         ) : (
           <div className="flex flex-col gap-6">
+            {stores.length > 1 && (
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                {stores.map(store => (
+                  <button
+                    key={store}
+                    onClick={() => setSelectedStore(store)}
+                    className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+                      selectedStore === store
+                        ? (STORE_LABELS[store]?.active ?? "bg-gray-900 text-white")
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {STORE_LABELS[store]?.label ?? store}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {activeItems.length > 0 && (
               <div className="flex flex-col gap-3">
                 {activeItems.map((item) => (
@@ -101,6 +132,10 @@ export default function CartPage() {
                   <span className="font-bold text-gray-900">${activeTotal.toFixed(2)}</span>
                 </div>
               </div>
+            )}
+
+            {activeItems.length === 0 && expiredItems.length === 0 && (
+              <p className="text-gray-400 text-sm">No items from this store.</p>
             )}
 
             {expiredItems.length > 0 && (
