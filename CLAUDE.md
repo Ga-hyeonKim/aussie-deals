@@ -54,9 +54,11 @@ Woolworths' API requires an active browser session — direct HTTP calls are blo
 ```
 GitHub Actions
   ├── fetch-woolworths.yml      (cron: every Wednesday)
-  │     └── upserts weekly specials → Product table
-  └── fetch-woolworths-all.yml  (cron: every other Monday)
-        └── upserts full catalog  → StoreProduct table
+  │     └── Playwright → upserts weekly specials → Product table
+  ├── fetch-woolworths-all.yml  (cron: every other Monday)
+  │     └── Playwright → upserts full catalog  → StoreProduct table
+  └── fetch-coles.yml           (cron: every Wednesday, +30min stagger)
+        └── HTTP fetch (no Playwright) → upserts weekly specials → Product + StoreProduct tables
 
 Vercel (Next.js app)
   └── reads from Neon PostgreSQL
@@ -68,15 +70,18 @@ Vercel (Next.js app)
 - `scripts/fetch-woolworths-all.ts` — full catalog scraper (all 15 categories, ~53K products)
   - Saves intermediate `scripts/woolworths-dump.json` after collection (before DB save)
   - Supports `--from-json` flag to retry DB save without re-collecting
+- `scripts/fetch-coles.ts` — Coles weekly specials scraper (no Playwright — uses Next.js `/_next/data/{buildId}` endpoint)
+  - Fetches buildId from homepage, paginates `on-special.json`, batch upserts to DB
+  - Saves intermediate `scripts/coles-dump.json`, supports `--from-json` flag
+  - Also upserts to StoreProduct (since no full catalog scraper yet)
 - `scripts/` is excluded from `tsconfig.json` (Next.js build only)
-- Coles: web scraping still broken as of 2026-04-17. App API disabled for Coles. Do NOT block on this.
 
 ### Two-table product design
 
 | Table | Purpose | Populated by |
 |-------|---------|-------------|
-| `Product` | Weekly specials only (has salePrice, validFrom/To, discountPercent) | fetch-woolworths.ts (weekly) |
-| `StoreProduct` | Full permanent catalog (current price, no validity window) | fetch-woolworths-all.ts (bi-weekly) |
+| `Product` | Weekly specials only (has salePrice, validFrom/To, discountPercent) | fetch-woolworths.ts + fetch-coles.ts (weekly) |
+| `StoreProduct` | Full permanent catalog (current price, no validity window) | fetch-woolworths-all.ts (bi-weekly) + fetch-coles.ts (weekly, specials only) |
 
 `Favorite` links to `StoreProduct` — users watch products regardless of sale status. When a favorited `StoreProduct` matches a current `Product` (same store+name), the favorites page shows an ON SALE badge.
 
@@ -152,7 +157,8 @@ prisma/
 - [x] **4. Favorites** — localStorage-based save/unsave, favorites page
 
 ### Phase 2 (in progress)
-- [ ] **5. Coles integration** — blocked: Coles web broken as of 2026-04-17 (app works, web doesn't). Do NOT block other features on this.
+- [x] **5a. Coles weekly specials** — `fetch-coles.ts` via Next.js `/_next/data` endpoint (no Playwright). ~7K specials/week.
+- [ ] **5b. Coles full catalog** — `fetch-coles-all.ts` (same endpoint, browse categories). ~29.5K products.
 - [x] **6. User auth** — NextAuth.js v5, Google OAuth, Prisma adapter, JWT sessions
 - [x] **6a. Navbar profile UI** — Google avatar + name, dropdown (Sign out)
 - [x] **6b. Session maxAge** — 30 days default
@@ -173,17 +179,29 @@ prisma/
 - [ ] **10. Price history** — graph price changes over time using Recharts. Requires product detail page (`/product/[id]`) and `PriceHistory` model.
 - [ ] **11. Notifications** — email/push when favorited StoreProduct appears in weekly deals
 
-### Phase 3
-- [ ] **12. "Real deal" badge** — compare salePrice vs PriceHistory average to flag genuinely good deals
-- [ ] **13. Weekly digest email** — opt-in newsletter with trending/cheaper-than-usual/personalised picks
-- [ ] **14. Share deals** — copy link / KakaoTalk share for individual deals
-- [ ] **15. PWA** — home screen install for mobile in-store use
+### Phase 3 — Cross-store UX (Coles + Woolworths 통합)
+
+#### Cart 스토어 분리
+- [x] **Cart A. Tab-based store separation** — Cart 페이지에 Woolworths / Coles 탭. 탭별 아이템 목록 + 소계 표시.
+- [ ] **Cart B. Comparison view** (Cart A 이후) — 같은 상품을 양쪽 스토어에 나란히 표시. 총합 비교로 어느 마트가 더 저렴한지 한눈에. normalizedName 매칭 완성 후 구현.
+
+#### Favorites 크로스스토어 통합
+- [ ] **Favorites A. normalizedName 매칭** — `StoreProduct`에 `normalizedName` 컬럼 추가 (소문자, 브랜드/사이즈 제거). `Favorite`을 `storeProductId` 기반 → `normalizedName` 기반으로 변경. 하트 한 번으로 양쪽 스토어 커버.
+  - 스키마 변경: `Favorite` 모델에 `normalizedName String` 추가, `storeProductId` 제거 또는 옵셔널
+  - 스크래퍼에서 저장 시 normalizedName 자동 계산 (brand 제거, 소문자, 특수문자 제거)
+  - 이미 `pg_trgm` 인덱스 있음 → 유사도 매칭에 활용 가능
+- [ ] **Favorites B. 통합 카드 UI** — Favorites 페이지에서 하나의 카드에 Woolworths + Coles 가격/세일 상태 동시 표시. `"Twix: Woolworths $4.00 (ON SALE) | Coles $3.50"`
+
+#### 기타
+- [ ] **16. "Real deal" badge** — compare salePrice vs PriceHistory average to flag genuinely good deals
+- [ ] **17. Weekly digest email** — opt-in newsletter with trending/cheaper-than-usual/personalised picks
+- [ ] **18. Share deals** — copy link / KakaoTalk share for individual deals
 
 ## Data Notes
 
 - **Woolworths weekly specials**: `isSpecial: true` in `/apis/ui/browse/category` POST. Updates every Wednesday (AEST). Scoped by `validFrom`/`validTo`.
 - **Woolworths full catalog**: same endpoint with `isSpecial: false`. ~53K unique products across 15 categories (Beauty/Personal Care/Baby/Pet each ~12K). Takes ~40 min to scrape.
-- **Coles**: web scraping broken. App works but no API access yet.
+- **Coles weekly specials**: Next.js `/_next/data/{buildId}/en/on-special.json` endpoint. No Playwright needed. ~7K specials. buildId changes on each Coles deployment — fetched fresh at scraper start. `pricing.was > 0` = real discount, `pricing.was == 0` = MULTI_SAVE bundle deal (originalPrice/discountPercent stored as null).
 - Always filter `Product` by current date when displaying deals.
 - `StoreProduct` has no date scope — it's a permanent catalog.
 
