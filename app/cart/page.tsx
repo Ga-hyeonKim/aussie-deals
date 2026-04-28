@@ -185,6 +185,7 @@ function CartRow({
             alt={item.product.name}
             fill
             sizes="64px"
+            unoptimized
             className="object-contain"
           />
         </div>

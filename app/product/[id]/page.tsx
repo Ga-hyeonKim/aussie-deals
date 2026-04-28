@@ -32,6 +32,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                 alt={product.name}
                 fill
                 sizes="192px"
+                unoptimized
                 className="object-contain"
               />
             </div>
