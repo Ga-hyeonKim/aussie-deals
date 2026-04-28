@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma"
 import DealsGrid from "@/components/DealsGrid"
 
+export const dynamic = "force-dynamic"
+
 function formatDateRange(validFrom: Date): string {
   const from = new Date(validFrom)
   const to = new Date(from.getTime() + 6 * 24 * 60 * 60 * 1000)
