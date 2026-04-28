@@ -20,6 +20,7 @@ export default function ProductCard({ product }: Props) {
             alt={product.name}
             fill
             sizes="80px"
+            unoptimized
             className="object-contain"
           />
         </div>
