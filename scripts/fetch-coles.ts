@@ -127,27 +127,48 @@ async function getBuildId(): Promise<string> {
   return buildId;
 }
 
+async function fetchColesJson(url: string, referer: string): Promise<unknown> {
+  const res = await fetch(url, { headers: { ...HEADERS, Referer: referer } });
+
+  if (res.status === 404) throw new Error("STALE_BUILD_ID");
+  if (!res.ok) throw new Error(`[Coles] HTTP ${res.status}`);
+
+  const text = await res.text();
+  if (text.trimStart().startsWith("<")) {
+    // 경비원이 HTML 챌린지 페이지를 돌려줌 — curl로 재시도
+    console.log("[Coles] fetch 차단됨 — curl로 재시도...");
+    const { execSync } = await import("child_process");
+    const curlText = execSync(
+      `curl -s --max-time 30 "${url}" ` +
+      `-H "User-Agent: ${HEADERS["User-Agent"]}" ` +
+      `-H "Accept: application/json, */*" ` +
+      `-H "Referer: ${referer}" ` +
+      `-H "sec-fetch-mode: cors" ` +
+      `-H "sec-fetch-site: same-origin"`,
+      { encoding: "utf8" }
+    );
+    if (curlText.trimStart().startsWith("<")) throw new Error("BLOCKED");
+    return JSON.parse(curlText);
+  }
+
+  return JSON.parse(text);
+}
+
 async function fetchSpecialsPage(
   buildId: string,
   page: number
 ): Promise<{ results: ColesRawProduct[]; noOfResults: number; pageSize: number; assetsUrl: string }> {
   const url = `${COLES_BASE}/_next/data/${buildId}/en/on-special.json?page=${page}&slug=on-special`;
-  const res = await fetch(url, { headers: HEADERS });
+  const data = await fetchColesJson(url, `${COLES_BASE}/on-special`) as Record<string, unknown>;
 
-  if (!res.ok) {
-    if (res.status === 404) throw new Error("STALE_BUILD_ID");
-    throw new Error(`[Coles] HTTP ${res.status} on page ${page}`);
-  }
-
-  const data = await res.json();
-  const sr = data?.pageProps?.searchResults;
+  const sr = (data?.pageProps as Record<string, unknown>)?.searchResults as Record<string, unknown> | undefined;
   if (!sr) throw new Error(`[Coles] searchResults 없음 — page ${page}`);
 
   return {
-    results: sr.results ?? [],
-    noOfResults: sr.noOfResults ?? 0,
-    pageSize: sr.pageSize ?? 48,
-    assetsUrl: data.pageProps?.assetsUrl ?? "https://cdn.productimages.coles.com.au/productimages",
+    results: (sr.results as ColesRawProduct[]) ?? [],
+    noOfResults: (sr.noOfResults as number) ?? 0,
+    pageSize: (sr.pageSize as number) ?? 48,
+    assetsUrl: (data.pageProps as Record<string, unknown>)?.assetsUrl as string ?? "https://cdn.productimages.coles.com.au/productimages",
   };
 }
 
@@ -271,7 +292,11 @@ async function upsertBatch(
 
         const sp = await prisma.storeProduct.upsert({
           where: { store_name: { store: "COLES", name: p.name } },
-          update: { price: p.originalPrice ?? p.salePrice, imageUrl: p.imageUrl },
+          update: {
+            // originalPrice가 있을 때만 가격 업데이트 (MULTI_SAVE는 null이라 세일가로 덮지 않음)
+            ...(p.originalPrice !== null ? { price: p.originalPrice } : {}),
+            imageUrl: p.imageUrl,
+          },
           create: {
             store: "COLES",
             name: p.name,
