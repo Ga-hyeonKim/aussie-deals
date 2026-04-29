@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { ProductModel } from "@/app/generated/prisma/models"
 import ProductCard from "./ProductCard"
 import FilterBar from "./FilterBar"
+
+const DISPLAY_LIMIT = 100
 
 type Props = {
   products: ProductModel[]
@@ -20,19 +22,31 @@ export default function DealsGrid({ products }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 250)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
   const storeProducts = products.filter(p => p.store === selectedStore)
   const categories = [...new Set(storeProducts.map(p => p.category))].sort()
-  let filtered = selectedCategory
-    ? storeProducts.filter(p => p.category === selectedCategory)
-    : storeProducts
 
-  if (searchQuery.trim()) {
-    const q = searchQuery.toLowerCase()
-    filtered = filtered.filter(p =>
-      p.name.toLowerCase().includes(q) &&
-      (p.discountPercent != null || p.originalPrice != null)
-    )
-  }
+  const filtered = useMemo(() => {
+    let result = selectedCategory
+      ? storeProducts.filter(p => p.category === selectedCategory)
+      : storeProducts
+
+    if (debouncedQuery.trim()) {
+      const q = debouncedQuery.toLowerCase()
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(q) &&
+        (p.discountPercent != null || p.originalPrice != null)
+      )
+    }
+
+    return result
+  }, [storeProducts, selectedCategory, debouncedQuery])
 
   function handleStoreChange(store: string) {
     setSelectedStore(store)
@@ -72,10 +86,15 @@ export default function DealsGrid({ products }: Props) {
 
       <p className="text-sm text-gray-500">{filtered.length} deals</p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {filtered.map((product) => (
+        {filtered.slice(0, DISPLAY_LIMIT).map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}
       </div>
+      {filtered.length > DISPLAY_LIMIT && (
+        <p className="text-center text-sm text-gray-400">
+          Showing {DISPLAY_LIMIT} of {filtered.length} deals — search to narrow down
+        </p>
+      )}
     </div>
   )
 }

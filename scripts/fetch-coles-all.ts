@@ -120,30 +120,48 @@ async function getBuildId(): Promise<string> {
   return buildId;
 }
 
+async function fetchColesJson(url: string, referer: string): Promise<unknown> {
+  const res = await fetch(url, { headers: { ...HEADERS, Referer: referer } });
+
+  if (res.status === 404) throw new Error("STALE_BUILD_ID");
+  if (!res.ok) throw new Error(`[Coles All] HTTP ${res.status}`);
+
+  const text = await res.text();
+  if (text.trimStart().startsWith("<")) {
+    console.log("[Coles All] fetch 차단됨 — curl로 재시도...");
+    const { execSync } = await import("child_process");
+    const curlText = execSync(
+      `curl -s --max-time 30 "${url}" ` +
+      `-H "User-Agent: ${HEADERS["User-Agent"]}" ` +
+      `-H "Accept: application/json, */*" ` +
+      `-H "Referer: ${referer}" ` +
+      `-H "sec-fetch-mode: cors" ` +
+      `-H "sec-fetch-site: same-origin"`,
+      { encoding: "utf8" }
+    );
+    if (curlText.trimStart().startsWith("<")) throw new Error("BLOCKED");
+    return JSON.parse(curlText);
+  }
+
+  return JSON.parse(text);
+}
+
 async function fetchCategoryPage(
   buildId: string,
   slug: string,
   page: number
 ): Promise<{ results: ColesRawProduct[]; noOfResults: number; pageSize: number; assetsUrl: string }> {
   const url = `${COLES_BASE}/_next/data/${buildId}/en/browse/${slug}.json?page=${page}&slug=${slug}`;
-  const res = await fetch(url, {
-    headers: { ...HEADERS, Referer: `${COLES_BASE}/browse/${slug}` },
-  });
+  const data = await fetchColesJson(url, `${COLES_BASE}/browse/${slug}`) as Record<string, unknown>;
 
-  if (!res.ok) {
-    if (res.status === 404) throw new Error("STALE_BUILD_ID");
-    throw new Error(`[Coles All] HTTP ${res.status} — ${slug} page ${page}`);
-  }
-
-  const data = await res.json();
-  const sr = data?.pageProps?.searchResults;
+  const sr = (data?.pageProps as Record<string, unknown>)?.searchResults as Record<string, unknown> | undefined;
   if (!sr) throw new Error(`[Coles All] searchResults 없음 — ${slug} page ${page}`);
 
   return {
-    results: sr.results ?? [],
-    noOfResults: sr.noOfResults ?? 0,
-    pageSize: sr.pageSize ?? 48,
-    assetsUrl: data.pageProps?.assetsUrl ?? "https://cdn.productimages.coles.com.au/productimages",
+    results: (sr.results as ColesRawProduct[]) ?? [],
+    noOfResults: (sr.noOfResults as number) ?? 0,
+    pageSize: (sr.pageSize as number) ?? 48,
+    assetsUrl: (data.pageProps as Record<string, unknown>)?.assetsUrl as string ?? "https://cdn.productimages.coles.com.au/productimages",
   };
 }
 
