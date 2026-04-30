@@ -8,6 +8,7 @@ import ws from "ws";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
+import { chromium, Browser, Page } from "playwright";
 
 neonConfig.webSocketConstructor = ws;
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
@@ -17,15 +18,25 @@ const DUMP_PATH = path.join(__dirname, "coles-dump.json");
 const BATCH_SIZE = 50;
 const PAGE_DELAY_MS = 500;
 const COLES_BASE = "https://www.coles.com.au";
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
-const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-  Accept: "application/json, */*",
-  Referer: `${COLES_BASE}/on-special`,
-  "sec-fetch-mode": "cors",
-  "sec-fetch-site": "same-origin",
-};
+let _browser: Browser | null = null;
+let _page: Page | null = null;
+
+async function getPage(): Promise<Page> {
+  if (_page) return _page;
+
+  _browser = await chromium.launch({ headless: true });
+  const context = await _browser.newContext({
+    userAgent: USER_AGENT,
+    locale: "en-AU",
+    extraHTTPHeaders: { "Accept-Language": "en-AU,en;q=0.9" },
+  });
+  _page = await context.newPage();
+  await _page.goto(`${COLES_BASE}/on-special`, { waitUntil: "domcontentloaded", timeout: 30000 });
+  return _page;
+}
 
 // --- Types ---
 
@@ -85,73 +96,41 @@ function fmt(ms: number): string {
 
 // --- Coles API ---
 
-async function extractBuildId(html: string): Promise<string | null> {
-  const match = html.match(/"buildId":"([^"]+)"/);
-  return match ? match[1] : null;
-}
-
 async function getBuildId(): Promise<string> {
-  const urls = [`${COLES_BASE}/on-special`, COLES_BASE];
-  const navHeaders = {
-    "User-Agent": HEADERS["User-Agent"],
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-AU,en;q=0.9",
-    "Cache-Control": "max-age=0",
-    "Upgrade-Insecure-Requests": "1",
-    "sec-fetch-dest": "document",
-    "sec-fetch-mode": "navigate",
-    "sec-fetch-site": "none",
-    "sec-fetch-user": "?1",
-  };
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { headers: navHeaders });
-      const html = await res.text();
-      const buildId = await extractBuildId(html);
-      if (buildId) return buildId;
-    } catch {
-      // 다음 URL 시도
-    }
-  }
-
-  // fallback: curl (다른 TLS 핑거프린트로 봇 차단 우회)
-  console.log("[Coles] fetch 차단됨 — curl로 재시도...");
-  const { execSync } = await import("child_process");
-  const html = execSync(
-    `curl -s --max-time 15 "${COLES_BASE}/on-special" -H "User-Agent: ${HEADERS["User-Agent"]}"`,
-    { encoding: "utf8" }
-  );
-  const buildId = await extractBuildId(html);
-  if (!buildId) throw new Error(`[Coles] buildId 추출 실패 — HTML: ${html.slice(0, 300)}`);
-  return buildId;
+  const page = await getPage();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildId = await page.evaluate(() => (window as any).__NEXT_DATA__?.buildId ?? null);
+  if (!buildId) throw new Error("[Coles] buildId 추출 실패");
+  return buildId as string;
 }
 
 async function fetchColesJson(url: string, referer: string): Promise<unknown> {
-  const res = await fetch(url, { headers: { ...HEADERS, Referer: referer } });
+  const page = await getPage();
 
-  if (res.status === 404) throw new Error("STALE_BUILD_ID");
-  if (!res.ok) throw new Error(`[Coles] HTTP ${res.status}`);
+  const result = await page.evaluate(
+    async (args: { url: string; referer: string }) => {
+      try {
+        const res = await fetch(args.url, {
+          headers: {
+            Accept: "application/json, */*",
+            Referer: args.referer,
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+          },
+        });
+        if (res.status === 404) return { error: "STALE_BUILD_ID" };
+        if (!res.ok) return { error: `HTTP ${res.status}` };
+        const data = await res.json();
+        return { data };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    },
+    { url, referer }
+  );
 
-  const text = await res.text();
-  if (text.trimStart().startsWith("<")) {
-    // 경비원이 HTML 챌린지 페이지를 돌려줌 — curl로 재시도
-    console.log("[Coles] fetch 차단됨 — curl로 재시도...");
-    const { execSync } = await import("child_process");
-    const curlText = execSync(
-      `curl -s --max-time 30 "${url}" ` +
-      `-H "User-Agent: ${HEADERS["User-Agent"]}" ` +
-      `-H "Accept: application/json, */*" ` +
-      `-H "Referer: ${referer}" ` +
-      `-H "sec-fetch-mode: cors" ` +
-      `-H "sec-fetch-site: same-origin"`,
-      { encoding: "utf8" }
-    );
-    if (curlText.trimStart().startsWith("<")) throw new Error("BLOCKED");
-    return JSON.parse(curlText);
-  }
-
-  return JSON.parse(text);
+  if ("error" in result) throw new Error(result.error as string);
+  return (result as { data: unknown }).data;
 }
 
 async function fetchSpecialsPage(
@@ -220,7 +199,9 @@ async function collect(): Promise<ParsedProduct[]> {
       data = await fetchSpecialsPage(buildId, page);
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "STALE_BUILD_ID" && page > 1) {
-        console.log("[Coles] buildId 만료 — 재취득 중...");
+        console.log("[Coles] buildId 만료 — 페이지 갱신 중...");
+        const p = await getPage();
+        await p.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
         buildId = await getBuildId();
         console.log(`[Coles] 새 buildId: ${buildId.slice(0, 30)}...`);
         data = await fetchSpecialsPage(buildId, page);
@@ -424,10 +405,12 @@ async function main() {
   }
 
   await prisma.$disconnect();
+  await _browser?.close();
 }
 
-main().catch(err => {
+main().catch(async err => {
   console.error(err);
-  prisma.$disconnect();
+  await prisma.$disconnect();
+  await _browser?.close();
   process.exit(1);
 });
