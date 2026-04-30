@@ -8,12 +8,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const now = new Date()
   const cartItems = await prisma.cartItem.findMany({
-    where: {
-      userId: session.user.id,
-      product: { validTo: { gte: now } },
-    },
+    where: { userId: session.user.id },
     include: { product: true },
     orderBy: { createdAt: "desc" },
   })
