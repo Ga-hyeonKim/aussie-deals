@@ -16,7 +16,7 @@ const prisma = new PrismaClient({ adapter });
 
 const DUMP_PATH = path.join(__dirname, "coles-dump.json");
 const BATCH_SIZE = 50;
-const PAGE_DELAY_MS = 500;
+const PAGE_DELAY_MS = 1000;
 const COLES_BASE = "https://www.coles.com.au";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -34,7 +34,7 @@ async function getPage(): Promise<Page> {
     extraHTTPHeaders: { "Accept-Language": "en-AU,en;q=0.9" },
   });
   _page = await context.newPage();
-  await _page.goto(`${COLES_BASE}/on-special`, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await _page.goto(`${COLES_BASE}/on-special`, { waitUntil: "load", timeout: 30000 });
   return _page;
 }
 
@@ -106,31 +106,42 @@ async function fetchSpecialsPage(
   if (pageNum > 1) {
     await page.goto(
       `${COLES_BASE}/on-special?page=${pageNum}`,
-      { waitUntil: "domcontentloaded", timeout: 30000 }
+      { waitUntil: "load", timeout: 30000 }
     );
   }
 
-  const data = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nd = (window as any).__NEXT_DATA__;
-    if (!nd) return null;
-    const pp = nd.props?.pageProps;
-    if (!pp) return null;
-    return {
-      searchResults: pp.searchResults ?? null,
-      assetsUrl: (pp.assetsUrl as string) ?? "https://cdn.productimages.coles.com.au/productimages",
-    };
-  });
+  // Imperva occasionally injects a challenge page mid-session — retry with reload
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const data = await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nd = (window as any).__NEXT_DATA__;
+      if (!nd) return null;
+      const pp = nd.props?.pageProps;
+      if (!pp) return null;
+      return {
+        searchResults: pp.searchResults ?? null,
+        assetsUrl: (pp.assetsUrl as string) ?? "https://cdn.productimages.coles.com.au/productimages",
+      };
+    });
 
-  if (!data?.searchResults) throw new Error(`[Coles] searchResults 없음 — page ${pageNum}`);
+    if (data?.searchResults) {
+      const sr = data.searchResults as Record<string, unknown>;
+      return {
+        results: (sr.results as ColesRawProduct[]) ?? [],
+        noOfResults: (sr.noOfResults as number) ?? 0,
+        pageSize: (sr.pageSize as number) ?? 48,
+        assetsUrl: data.assetsUrl,
+      };
+    }
 
-  const sr = data.searchResults as Record<string, unknown>;
-  return {
-    results: (sr.results as ColesRawProduct[]) ?? [],
-    noOfResults: (sr.noOfResults as number) ?? 0,
-    pageSize: (sr.pageSize as number) ?? 48,
-    assetsUrl: data.assetsUrl,
-  };
+    if (attempt < 2) {
+      console.log(`[Coles] page ${pageNum} 챌린지 감지 — 재시도 (${attempt + 1}/3)...`);
+      await new Promise(r => setTimeout(r, 4000 + attempt * 3000));
+      await page.reload({ waitUntil: "load", timeout: 30000 });
+    }
+  }
+
+  throw new Error(`[Coles] searchResults 없음 — page ${pageNum}`);
 }
 
 function parseProduct(p: ColesRawProduct, assetsUrl: string): ParsedProduct | null {
