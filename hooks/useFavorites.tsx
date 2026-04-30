@@ -94,13 +94,14 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         })
-          .then(res => res.json())
+          .then(res => (res.ok && !removing ? res.json() : null))
           .then(data => {
-            if (!removing && isProductFallback && data.storeProductId) {
+            if (!removing && isProductFallback && data?.storeProductId) {
               productToStoreRef.current.set(id, data.storeProductId)
               setFavorites(prev2 => new Set([...prev2, data.storeProductId]))
             }
           })
+          .catch(() => {})
       } else {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]))
       }

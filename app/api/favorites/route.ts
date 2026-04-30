@@ -52,7 +52,8 @@ async function resolveStoreProductId(
           brand: product.brand,
           category: product.category,
           unit: product.unit,
-          price: product.salePrice,
+          // only overwrite price if we know the regular (pre-sale) price
+          ...(product.originalPrice !== null ? { price: product.originalPrice } : {}),
           imageUrl: product.imageUrl,
         },
         create: {
@@ -61,7 +62,7 @@ async function resolveStoreProductId(
           brand: product.brand,
           category: product.category,
           unit: product.unit,
-          price: product.salePrice,
+          price: product.originalPrice ?? product.salePrice,
           imageUrl: product.imageUrl,
         },
       })
@@ -78,21 +79,26 @@ async function resolveStoreProductId(
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth()
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const body = await request.json()
-  const storeProductId = await resolveStoreProductId(body, true)
-  if (!storeProductId) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    const body = await request.json()
+    const storeProductId = await resolveStoreProductId(body, true)
+    if (!storeProductId) return NextResponse.json({ error: "Product not found" }, { status: 404 })
 
-  const favorite = await prisma.favorite.upsert({
-    where: { userId_storeProductId: { userId: session.user.id, storeProductId } },
-    update: {},
-    create: { userId: session.user.id, storeProductId },
-    include: { storeProduct: true },
-  })
+    await prisma.favorite.create({
+      data: { userId: session.user.id, storeProductId },
+    }).catch((e: { code?: string }) => {
+      if (e.code !== 'P2002') throw e
+      // P2002 = already favorited, treat as success
+    })
 
-  return NextResponse.json({ ...favorite, storeProductId }, { status: 201 })
+    return NextResponse.json({ storeProductId }, { status: 201 })
+  } catch (e) {
+    console.error("[favorites POST]", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
 }
 
 export async function DELETE(request: NextRequest) {
