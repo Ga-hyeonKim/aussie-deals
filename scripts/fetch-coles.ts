@@ -96,58 +96,40 @@ function fmt(ms: number): string {
 
 // --- Coles API ---
 
-async function getBuildId(): Promise<string> {
-  const page = await getPage();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const buildId = await page.evaluate(() => (window as any).__NEXT_DATA__?.buildId ?? null);
-  if (!buildId) throw new Error("[Coles] buildId 추출 실패");
-  return buildId as string;
-}
-
-async function fetchColesJson(url: string, referer: string): Promise<unknown> {
-  const page = await getPage();
-
-  const result = await page.evaluate(
-    async (args: { url: string; referer: string }) => {
-      try {
-        const res = await fetch(args.url, {
-          headers: {
-            Accept: "application/json, */*",
-            Referer: args.referer,
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-          },
-        });
-        if (res.status === 404) return { error: "STALE_BUILD_ID" };
-        if (!res.ok) return { error: `HTTP ${res.status}` };
-        const data = await res.json();
-        return { data };
-      } catch (e) {
-        return { error: String(e) };
-      }
-    },
-    { url, referer }
-  );
-
-  if ("error" in result) throw new Error(result.error as string);
-  return (result as { data: unknown }).data;
-}
-
 async function fetchSpecialsPage(
-  buildId: string,
-  page: number
+  pageNum: number
 ): Promise<{ results: ColesRawProduct[]; noOfResults: number; pageSize: number; assetsUrl: string }> {
-  const url = `${COLES_BASE}/_next/data/${buildId}/en/on-special.json?page=${page}&slug=on-special`;
-  const data = await fetchColesJson(url, `${COLES_BASE}/on-special`) as Record<string, unknown>;
+  const page = await getPage();
 
-  const sr = (data?.pageProps as Record<string, unknown>)?.searchResults as Record<string, unknown> | undefined;
-  if (!sr) throw new Error(`[Coles] searchResults 없음 — page ${page}`);
+  // Navigate to each page directly — __NEXT_DATA__ in the SSR'd HTML gives us the data
+  // without any XHR/fetch calls that Imperva blocks
+  if (pageNum > 1) {
+    await page.goto(
+      `${COLES_BASE}/on-special?page=${pageNum}`,
+      { waitUntil: "domcontentloaded", timeout: 30000 }
+    );
+  }
 
+  const data = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nd = (window as any).__NEXT_DATA__;
+    if (!nd) return null;
+    const pp = nd.props?.pageProps;
+    if (!pp) return null;
+    return {
+      searchResults: pp.searchResults ?? null,
+      assetsUrl: (pp.assetsUrl as string) ?? "https://cdn.productimages.coles.com.au/productimages",
+    };
+  });
+
+  if (!data?.searchResults) throw new Error(`[Coles] searchResults 없음 — page ${pageNum}`);
+
+  const sr = data.searchResults as Record<string, unknown>;
   return {
     results: (sr.results as ColesRawProduct[]) ?? [],
     noOfResults: (sr.noOfResults as number) ?? 0,
     pageSize: (sr.pageSize as number) ?? 48,
-    assetsUrl: (data.pageProps as Record<string, unknown>)?.assetsUrl as string ?? "https://cdn.productimages.coles.com.au/productimages",
+    assetsUrl: data.assetsUrl,
   };
 }
 
@@ -183,34 +165,17 @@ function parseProduct(p: ColesRawProduct, assetsUrl: string): ParsedProduct | nu
 async function collect(): Promise<ParsedProduct[]> {
   console.log("[Coles] 주간 특가 수집 시작...");
 
-  let buildId = await getBuildId();
-  console.log(`[Coles] buildId: ${buildId.slice(0, 30)}...`);
-
   const startTime = Date.now();
   const allProducts: ParsedProduct[] = [];
   const seenIds = new Set<number>();
-  let page = 1;
+  let pageNum = 1;
   let totalPages = 1;
   let assetsUrl = "";
 
-  while (page <= totalPages) {
-    let data;
-    try {
-      data = await fetchSpecialsPage(buildId, page);
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message === "STALE_BUILD_ID" && page > 1) {
-        console.log("[Coles] buildId 만료 — 페이지 갱신 중...");
-        const p = await getPage();
-        await p.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-        buildId = await getBuildId();
-        console.log(`[Coles] 새 buildId: ${buildId.slice(0, 30)}...`);
-        data = await fetchSpecialsPage(buildId, page);
-      } else {
-        throw e;
-      }
-    }
+  while (pageNum <= totalPages) {
+    const data = await fetchSpecialsPage(pageNum);
 
-    if (page === 1) {
+    if (pageNum === 1) {
       totalPages = Math.ceil(data.noOfResults / data.pageSize);
       assetsUrl = data.assetsUrl;
       console.log(`[Coles] 총 ${data.noOfResults}개, ${totalPages} 페이지`);
@@ -223,12 +188,12 @@ async function collect(): Promise<ParsedProduct[]> {
       if (parsed) allProducts.push(parsed);
     }
 
-    if (page % 20 === 0 || page === totalPages) {
-      console.log(`[Coles] ${page}/${totalPages} 페이지 — ${allProducts.length}개 수집 (${fmt(Date.now() - startTime)})`);
+    if (pageNum % 20 === 0 || pageNum === totalPages) {
+      console.log(`[Coles] ${pageNum}/${totalPages} 페이지 — ${allProducts.length}개 수집 (${fmt(Date.now() - startTime)})`);
     }
 
-    page++;
-    if (page <= totalPages) await new Promise(r => setTimeout(r, PAGE_DELAY_MS));
+    pageNum++;
+    if (pageNum <= totalPages) await new Promise(r => setTimeout(r, PAGE_DELAY_MS));
   }
 
   console.log(`[Coles] 수집 완료: ${allProducts.length}개 (${fmt(Date.now() - startTime)})`);
