@@ -17,19 +17,23 @@ const CartContext = createContext<CartContextValue | null>(null)
 export function CartProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession()
   const [cartProductIds, setCartProductIds] = useState<Set<string>>(new Set())
+  const [activeCount, setActiveCount] = useState(0)
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
     if (!session?.user) {
       setCartProductIds(new Set())
+      setActiveCount(0)
       setIsReady(true)
       return
     }
 
     fetch("/api/cart")
       .then((res) => res.json())
-      .then((items: { productId: string }[]) => {
+      .then((items: { productId: string; product: { validTo: string } }[]) => {
         setCartProductIds(new Set(items.map((i) => i.productId)))
+        const now = new Date()
+        setActiveCount(items.filter((i) => new Date(i.product.validTo) >= now).length)
       })
       .finally(() => setIsReady(true))
   }, [session?.user])
@@ -72,7 +76,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ cartProductIds, toggle, isInCart, count: cartProductIds.size, isReady }}
+      value={{ cartProductIds, toggle, isInCart, count: activeCount, isReady }}
     >
       {children}
     </CartContext.Provider>
