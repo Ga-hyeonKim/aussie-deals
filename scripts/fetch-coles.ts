@@ -8,7 +8,11 @@ import ws from "ws";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
-import { chromium, Browser, Page } from "playwright";
+import { chromium } from "playwright-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import type { Browser, Page } from "playwright";
+
+chromium.use(StealthPlugin());
 
 neonConfig.webSocketConstructor = ws;
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
@@ -104,10 +108,9 @@ async function fetchSpecialsPage(
   // Navigate to each page directly — __NEXT_DATA__ in the SSR'd HTML gives us the data
   // without any XHR/fetch calls that Imperva blocks
   if (pageNum > 1) {
-    await page.goto(
-      `${COLES_BASE}/on-special?page=${pageNum}`,
-      { waitUntil: "load", timeout: 30000 }
-    );
+    // Use actual URL after any redirect (e.g. /on-special → /en/on-special)
+    const baseUrl = page.url().split("?")[0];
+    await page.goto(`${baseUrl}?page=${pageNum}`, { waitUntil: "load", timeout: 30000 });
   }
 
   // Imperva occasionally injects a challenge page mid-session — retry with reload
