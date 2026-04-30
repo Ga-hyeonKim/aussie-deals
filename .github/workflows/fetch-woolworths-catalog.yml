@@ -1,4 +1,4 @@
-name: Fetch Woolworths All Products
+name: Fetch Woolworths Catalog
 
 on:
   schedule:

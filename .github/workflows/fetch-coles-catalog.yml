@@ -1,4 +1,4 @@
-name: Fetch Coles Full Catalog
+name: Fetch Coles Catalog
 
 on:
   schedule:
