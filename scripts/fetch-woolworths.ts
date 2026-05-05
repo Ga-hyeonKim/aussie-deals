@@ -231,7 +231,7 @@ async function main() {
 
     await prisma.priceHistory.create({
       data: { storeProductId: storeProduct.id, price: p.salePrice, isOnSale: true },
-    }).catch(() => {});
+    }).catch((e: Error) => console.error(`[Woolworths] PriceHistory 저장 실패 (${p.name}):`, e.message));
 
     upserted++;
   }
