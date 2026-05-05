@@ -18,7 +18,8 @@ const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 const DUMP_PATH = path.join(__dirname, "woolworths-dump.json");
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 100;
+const DB_CONCURRENCY = 10; // max parallel upserts to avoid Neon connection overload
 
 const CATEGORIES = [
   { id: "1-E5BEE36E", name: "Fruit & Veg" },
@@ -129,17 +130,24 @@ async function fetchCategoryAll(
 }
 
 async function upsertBatch(products: ParsedProduct[]): Promise<void> {
-  const results = await Promise.all(
-    products.map(async p => {
-      const sp = await prisma.storeProduct.upsert({
-        where: { store_name: { store: "WOOLWORTHS", name: p.name } },
-        update: { brand: p.brand, category: p.category, unit: p.unit, imageUrl: p.imageUrl },
-        create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
-        select: { id: true },
-      }).catch(e => { console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message); return null; });
-      return sp ? { id: sp.id, price: p.price } : null;
-    })
-  );
+  const results: ({ id: string; price: number } | null)[] = [];
+
+  // Process in small concurrent chunks to avoid overwhelming Neon connection pool
+  for (let i = 0; i < products.length; i += DB_CONCURRENCY) {
+    const chunk = products.slice(i, i + DB_CONCURRENCY);
+    const chunkResults = await Promise.all(
+      chunk.map(async p => {
+        const sp = await prisma.storeProduct.upsert({
+          where: { store_name: { store: "WOOLWORTHS", name: p.name } },
+          update: { brand: p.brand, category: p.category, unit: p.unit, imageUrl: p.imageUrl },
+          create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
+          select: { id: true },
+        }).catch((e: Error) => { console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message); return null; });
+        return sp ? { id: sp.id, price: p.price } : null;
+      })
+    );
+    results.push(...chunkResults);
+  }
 
   const history = results.filter(Boolean).map(r => ({
     storeProductId: r!.id,
