@@ -76,7 +76,7 @@ async function fetchCategoryAll(
 ): Promise<ParsedProduct[]> {
   const products: ParsedProduct[] = [];
   let pageNumber = 1;
-  const pageSize = 36;
+  const pageSize = 100;
 
   while (true) {
     const result = await page.evaluate(
@@ -123,7 +123,7 @@ async function fetchCategoryAll(
     const totalPages = Math.ceil((result.TotalRecordCount ?? 0) / pageSize);
     if (pageNumber >= totalPages || pageProducts === 0) break;
     pageNumber++;
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 150));
   }
 
   return products;
