@@ -76,7 +76,7 @@ async function fetchCategoryAll(
 ): Promise<ParsedProduct[]> {
   const products: ParsedProduct[] = [];
   let pageNumber = 1;
-  const pageSize = 100;
+  const pageSize = 36;
 
   while (true) {
     const result = await page.evaluate(
