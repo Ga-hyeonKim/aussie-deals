@@ -50,6 +50,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         else next.add(productId)
         return next
       })
+      setActiveCount((c) => Math.max(0, removing ? c - 1 : c + 1))
 
       const res = await fetch("/api/cart", {
         method: removing ? "DELETE" : "POST",
@@ -64,6 +65,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           else next.delete(productId)
           return next
         })
+        setActiveCount((c) => Math.max(0, removing ? c + 1 : c - 1))
       }
     },
     [session?.user, cartProductIds]

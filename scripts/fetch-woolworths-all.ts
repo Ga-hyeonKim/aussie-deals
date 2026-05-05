@@ -133,7 +133,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
     products.map(async p => {
       const sp = await prisma.storeProduct.upsert({
         where: { store_name: { store: "WOOLWORTHS", name: p.name } },
-        update: { brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
+        update: { brand: p.brand, category: p.category, unit: p.unit, imageUrl: p.imageUrl },
         create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
         select: { id: true },
       }).catch(e => { console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message); return null; });
