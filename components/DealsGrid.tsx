@@ -5,29 +5,42 @@ import { ProductModel } from "@/app/generated/prisma/models"
 import ProductCard from "./ProductCard"
 import FilterBar from "./FilterBar"
 
-const DISPLAY_LIMIT = 100
-
-type Props = {
-  products: ProductModel[]
-}
+const PAGE_SIZE = 48
 
 const STORE_LABELS: Record<string, { label: string; active: string }> = {
   WOOLWORTHS: { label: "Woolworths", active: "bg-green-600 text-white" },
   COLES:      { label: "Coles",      active: "bg-red-600 text-white" },
 }
 
+const DISCOUNT_FILTERS: { label: string; value: number | null }[] = [
+  { label: "All", value: null },
+  { label: "Half price", value: 50 },
+  { label: "30%+", value: 30 },
+  { label: "20%+", value: 20 },
+]
+
+type Props = {
+  products: ProductModel[]
+}
+
 export default function DealsGrid({ products }: Props) {
   const stores = [...new Set(products.map(p => p.store))].sort()
   const [selectedStore, setSelectedStore] = useState<string>(stores[0] ?? "WOOLWORTHS")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [discountFilter, setDiscountFilter] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
-
   const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(searchQuery), 250)
     return () => clearTimeout(timer)
   }, [searchQuery])
+
+  // Reset display count whenever any filter changes
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE)
+  }, [selectedStore, selectedCategory, discountFilter, debouncedQuery])
 
   const storeProducts = products.filter(p => p.store === selectedStore)
   const categories = [...new Set(storeProducts.map(p => p.category))].sort()
@@ -37,16 +50,20 @@ export default function DealsGrid({ products }: Props) {
       ? storeProducts.filter(p => p.category === selectedCategory)
       : storeProducts
 
+    if (discountFilter !== null) {
+      result = result.filter(p => p.discountPercent != null && p.discountPercent >= discountFilter)
+    }
+
     if (debouncedQuery.trim()) {
       const q = debouncedQuery.toLowerCase()
-      result = result.filter(p =>
-        p.name.toLowerCase().includes(q) &&
-        (p.discountPercent != null || p.originalPrice != null)
-      )
+      result = result.filter(p => p.name.toLowerCase().includes(q))
     }
 
     return result
-  }, [storeProducts, selectedCategory, debouncedQuery])
+  }, [storeProducts, selectedCategory, discountFilter, debouncedQuery])
+
+  const visible = filtered.slice(0, displayCount)
+  const hasMore = filtered.length > displayCount
 
   function handleStoreChange(store: string) {
     setSelectedStore(store)
@@ -64,36 +81,58 @@ export default function DealsGrid({ products }: Props) {
           placeholder="Search deals..."
           className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none focus:border-gray-400 focus:ring-2 focus:ring-green-400"
         />
-        {stores.length > 1 && (
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-            {stores.map(store => (
+        <div className="flex flex-wrap gap-2 items-center">
+          {stores.length > 1 && (
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+              {stores.map(store => (
+                <button
+                  key={store}
+                  onClick={() => handleStoreChange(store)}
+                  className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    selectedStore === store
+                      ? (STORE_LABELS[store]?.active ?? "bg-gray-900 text-white")
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {STORE_LABELS[store]?.label ?? store}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+            {DISCOUNT_FILTERS.map(f => (
               <button
-                key={store}
-                onClick={() => handleStoreChange(store)}
-                className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
-                  selectedStore === store
-                    ? (STORE_LABELS[store]?.active ?? "bg-gray-900 text-white")
+                key={f.label}
+                onClick={() => setDiscountFilter(f.value)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+                  discountFilter === f.value
+                    ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                {STORE_LABELS[store]?.label ?? store}
+                {f.label}
               </button>
             ))}
           </div>
-        )}
+        </div>
         <FilterBar categories={categories} selected={selectedCategory} onSelect={setSelectedCategory} />
       </div>
 
-      <p className="text-sm text-gray-500">{filtered.length} deals</p>
+      <p className="text-sm text-gray-500">
+        {hasMore ? `Showing ${displayCount} of ${filtered.length} deals` : `${filtered.length} deals`}
+      </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {filtered.slice(0, DISPLAY_LIMIT).map((product) => (
+        {visible.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}
       </div>
-      {filtered.length > DISPLAY_LIMIT && (
-        <p className="text-center text-sm text-gray-400">
-          Showing {DISPLAY_LIMIT} of {filtered.length} deals — search to narrow down
-        </p>
+      {hasMore && (
+        <button
+          onClick={() => setDisplayCount(c => c + PAGE_SIZE)}
+          className="mx-auto rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+        >
+          Load more ({filtered.length - displayCount} remaining)
+        </button>
       )}
     </div>
   )

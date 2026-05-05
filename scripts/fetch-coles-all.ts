@@ -222,7 +222,6 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
         const sp = await prisma.storeProduct.upsert({
           where: { store_name: { store: "COLES", name: p.name } },
           update: {
-            price: p.price,
             brand: p.brand,
             unit: p.unit,
             imageUrl: p.imageUrl,

@@ -14,6 +14,7 @@ type FavoriteWithDeal = {
   storeProductId: string
   storeProduct: StoreProductModel
   currentDeal: ProductModel | null
+  regularPrice: number | null
 }
 
 export default function FavoritesPage() {
@@ -178,7 +179,7 @@ export default function FavoritesPage() {
                   ) : (
                     <div className="flex items-end gap-2">
                       <span className="text-lg font-bold text-gray-900">
-                        ${fav.storeProduct.price.toFixed(2)}
+                        ${(fav.regularPrice ?? fav.storeProduct.price).toFixed(2)}
                       </span>
                       <span className="text-xs text-gray-400">Not on sale</span>
                     </div>

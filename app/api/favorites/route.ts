@@ -17,21 +17,36 @@ export async function GET() {
   const now = new Date()
   const nameFilters = favorites.map(f => ({ store: f.storeProduct.store, name: f.storeProduct.name }))
 
-  const currentDeals = await prisma.product.findMany({
-    where: {
-      validFrom: { lte: now },
-      validTo: { gte: now },
-      OR: nameFilters,
-    },
-  })
+  const [currentDeals, recentProducts] = await Promise.all([
+    prisma.product.findMany({
+      where: {
+        validFrom: { lte: now },
+        validTo: { gte: now },
+        OR: nameFilters,
+      },
+    }),
+    // Most recent Product per item (even expired) — gives us the real originalPrice
+    prisma.product.findMany({
+      where: { OR: nameFilters },
+      orderBy: { validTo: "desc" },
+      distinct: ["store", "name"],
+      select: { store: true, name: true, originalPrice: true, salePrice: true, discountPercent: true, validTo: true },
+    }),
+  ])
 
   const dealMap = new Map(currentDeals.map(d => [`${d.store}:${d.name}`, d]))
+  const recentMap = new Map(recentProducts.map(d => [`${d.store}:${d.name}`, d]))
 
   return NextResponse.json(
-    favorites.map(f => ({
-      ...f,
-      currentDeal: dealMap.get(`${f.storeProduct.store}:${f.storeProduct.name}`) ?? null,
-    }))
+    favorites.map(f => {
+      const key = `${f.storeProduct.store}:${f.storeProduct.name}`
+      const recent = recentMap.get(key)
+      return {
+        ...f,
+        currentDeal: dealMap.get(key) ?? null,
+        regularPrice: recent?.originalPrice ?? null,
+      }
+    })
   )
 }
 
