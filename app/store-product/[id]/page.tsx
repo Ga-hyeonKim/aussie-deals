@@ -13,14 +13,23 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
   if (!storeProduct) notFound()
 
   const now = new Date()
-  const currentDeal = await prisma.product.findFirst({
-    where: {
-      store: storeProduct.store,
-      name: storeProduct.name,
-      validFrom: { lte: now },
-      validTo: { gte: now },
-    },
-  })
+  const [currentDeal, recentProduct] = await Promise.all([
+    prisma.product.findFirst({
+      where: {
+        store: storeProduct.store,
+        name: storeProduct.name,
+        validFrom: { lte: now },
+        validTo: { gte: now },
+      },
+    }),
+    prisma.product.findFirst({
+      where: { store: storeProduct.store, name: storeProduct.name },
+      orderBy: { validTo: "desc" },
+      select: { originalPrice: true },
+    }),
+  ])
+
+  const regularPrice = recentProduct?.originalPrice ?? storeProduct.price
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -66,7 +75,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
                 )}
               </>
             ) : (
-              <span className="text-3xl font-bold text-gray-900">${storeProduct.price.toFixed(2)}</span>
+              <span className="text-3xl font-bold text-gray-900">${regularPrice.toFixed(2)}</span>
             )}
           </div>
 

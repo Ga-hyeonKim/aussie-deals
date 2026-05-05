@@ -148,7 +148,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
   }));
 
   if (history.length > 0) {
-    await prisma.priceHistory.createMany({ data: history }).catch(() => {});
+    await prisma.priceHistory.createMany({ data: history }).catch((e: Error) => console.error(`[Woolworths All] PriceHistory createMany 실패:`, e.message));
   }
 }
 
