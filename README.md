@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AussieDeals
 
-## Getting Started
+Weekly grocery deals aggregator for Woolworths & Coles (AU). Shows this week's specials, tracks price history, and lets you build a shopping cart — mobile-first, designed for in-store use.
 
-First, run the development server:
+## Tech Stack
+
+| Layer | Choice |
+|-------|--------|
+| Framework | Next.js 14+ (App Router) |
+| Database | PostgreSQL via Neon |
+| ORM | Prisma 7 |
+| Hosting | Vercel |
+| Scraper runner | GitHub Actions (cron) |
+| Charts | Recharts |
+| Auth | NextAuth.js v5 (Google OAuth) |
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Requires a `.env` file with:
+```
+DATABASE_URL=
+AUTH_SECRET=
+AUTH_GOOGLE_ID=
+AUTH_GOOGLE_SECRET=
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## DB Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx prisma db push          # sync schema to DB (dev only)
+npx prisma studio           # visual DB browser
+npx prisma generate         # after schema changes
+```
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+Woolworths & Coles block direct HTTP from AWS (Vercel serverless). All scraping runs on GitHub Actions using Playwright stealth.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+GitHub Actions (cron)
+  ├── fetch-woolworths-specials.yml   every Wednesday
+  ├── fetch-coles-specials.yml        every Wednesday +30min
+  ├── fetch-woolworths-catalog.yml    every other Monday
+  └── fetch-coles-catalog.yml         every other Monday +1h
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Vercel → reads Neon PostgreSQL → serves Next.js UI + API routes
+```
 
-## Deploy on Vercel
+### Data model
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Table | What it holds |
+|-------|--------------|
+| `Product` | Weekly specials — salePrice, discountPercent, validFrom/To |
+| `StoreProduct` | Full catalog — current price, no date scope |
+| `PriceHistory` | Per-product price log for history graphs |
+| `Favorite` | User watchlist → StoreProduct |
+| `CartItem` | User cart → Product (this week's deals only) |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Manual Scraper Runs
+
+```bash
+npx tsx scripts/fetch-woolworths.ts
+npx tsx scripts/fetch-woolworths-all.ts
+npx tsx scripts/fetch-woolworths-all.ts --from-json
+
+npx tsx scripts/fetch-coles.ts
+npx tsx scripts/fetch-coles-all.ts
+npx tsx scripts/fetch-coles-all.ts --from-json
+```

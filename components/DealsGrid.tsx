@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { ProductModel } from "@/app/generated/prisma/models"
 import ProductCard from "./ProductCard"
 import FilterBar from "./FilterBar"
@@ -31,16 +31,70 @@ export default function DealsGrid({ products }: Props) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
+  const scrollRestoreRef = useRef<number | null>(null)
+  const isFirstRender = useRef(true)
+  const isFirstDisplayCountEffect = useRef(true)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(searchQuery), 250)
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Reset display count whenever any filter changes
+  // Reset on filter changes — skip initial mount so restore effect can read sessionStorage first
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
     setDisplayCount(PAGE_SIZE)
+    sessionStorage.removeItem('dealsDisplayCount')
+    sessionStorage.removeItem('dealsScrollY')
   }, [selectedStore, selectedCategory, discountFilter, debouncedQuery])
+
+  // Restore scroll + displayCount when returning from a product page
+  useEffect(() => {
+    if (!sessionStorage.getItem('dealsReturning')) return
+    sessionStorage.removeItem('dealsReturning')
+
+    const savedCount = parseInt(sessionStorage.getItem('dealsDisplayCount') ?? '')
+    const savedScroll = parseInt(sessionStorage.getItem('dealsScrollY') ?? '0')
+
+    if (!isNaN(savedCount) && savedCount > PAGE_SIZE) {
+      scrollRestoreRef.current = savedScroll
+      setDisplayCount(savedCount)
+    } else {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' }), 100)
+    }
+  }, [])
+
+  // Scroll to saved position AFTER displayCount re-render (skip mount, only run on change)
+  useEffect(() => {
+    if (isFirstDisplayCountEffect.current) {
+      isFirstDisplayCountEffect.current = false
+      return
+    }
+    if (scrollRestoreRef.current === null) return
+    const y = scrollRestoreRef.current
+    scrollRestoreRef.current = null
+    setTimeout(() => window.scrollTo({ top: y, behavior: 'instant' }), 100)
+  }, [displayCount])
+
+  // Persist displayCount whenever it changes
+  useEffect(() => {
+    sessionStorage.setItem('dealsDisplayCount', String(displayCount))
+  }, [displayCount])
+
+  // Persist scroll position continuously
+  useEffect(() => {
+    const onScroll = () => sessionStorage.setItem('dealsScrollY', String(Math.round(window.scrollY)))
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Set returning flag on unmount — more reliable than onClick bubbling
+  useEffect(() => {
+    return () => { sessionStorage.setItem('dealsReturning', 'true') }
+  }, [])
 
   const storeProducts = products.filter(p => p.store === selectedStore)
   const categories = [...new Set(storeProducts.map(p => p.category))].sort()

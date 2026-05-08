@@ -8,6 +8,7 @@ import ws from "ws";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
+import { canonicalizeBrand } from "../lib/canonicalize";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "playwright";
@@ -256,11 +257,13 @@ async function upsertBatch(
             // originalPrice가 있을 때만 가격 업데이트 (MULTI_SAVE는 null이라 세일가로 덮지 않음)
             ...(p.originalPrice !== null ? { price: p.originalPrice } : {}),
             imageUrl: p.imageUrl,
+            canonicalBrand: canonicalizeBrand(p.brand),
           },
           create: {
             store: "COLES",
             name: p.name,
             brand: p.brand,
+            canonicalBrand: canonicalizeBrand(p.brand),
             category: p.category,
             unit: p.unit,
             price: p.originalPrice ?? p.salePrice,

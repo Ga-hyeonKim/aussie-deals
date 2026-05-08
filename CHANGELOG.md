@@ -4,8 +4,8 @@ Format: significant user-facing or architecture changes only.
 
 ## [In progress]
 - normalizedName cross-store matching
+- 세일 감지 파이프라인 (찜 목록 배지 + 푸시 알림)
 - Price history graph (Recharts)
-- PWA push notifications
 - "Real deal" badge
 
 ## 2026-04-30

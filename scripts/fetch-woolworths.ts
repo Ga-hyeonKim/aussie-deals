@@ -4,6 +4,7 @@ import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
+import { canonicalizeBrand } from "../lib/canonicalize";
 
 chromium.use(StealthPlugin());
 
@@ -216,11 +217,12 @@ async function main() {
 
     const storeProduct = await prisma.storeProduct.upsert({
       where: { store_name: { store: "WOOLWORTHS", name: p.name } },
-      update: { price: p.originalPrice ?? p.salePrice, imageUrl: p.imageUrl },
+      update: { price: p.originalPrice ?? p.salePrice, imageUrl: p.imageUrl, canonicalBrand: canonicalizeBrand(p.brand) },
       create: {
         store: "WOOLWORTHS",
         name: p.name,
         brand: p.brand,
+        canonicalBrand: canonicalizeBrand(p.brand),
         category: p.category,
         unit: p.unit,
         price: p.originalPrice ?? p.salePrice,
