@@ -8,6 +8,7 @@ import ws from "ws";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
+import { canonicalizeBrand } from "../lib/canonicalize";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "playwright";
@@ -223,6 +224,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
           where: { store_name: { store: "COLES", name: p.name } },
           update: {
             brand: p.brand,
+            canonicalBrand: canonicalizeBrand(p.brand),
             unit: p.unit,
             imageUrl: p.imageUrl,
             category: p.category,
@@ -231,6 +233,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
             store: "COLES",
             name: p.name,
             brand: p.brand,
+            canonicalBrand: canonicalizeBrand(p.brand),
             category: p.category,
             unit: p.unit,
             price: p.price,

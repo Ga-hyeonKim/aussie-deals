@@ -56,3 +56,4 @@ client_secret*.json
 scripts/woolworths-dump.json
 scripts/coles-dump.json
 scripts/coles-all-dump.json
+scripts/brands-export.json

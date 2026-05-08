@@ -39,21 +39,23 @@ model Product {
 }
 
 model StoreProduct {
-  id           String        @id @default(cuid())
-  store        Store
-  name         String
-  brand        String?
-  category     String
-  unit         String?
-  price        Float
-  imageUrl     String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  favorites    Favorite[]
-  priceHistory PriceHistory[]
+  id              String        @id @default(cuid())
+  store           Store
+  name            String
+  brand           String?
+  canonicalBrand  String?       @map("canonical_brand")
+  category        String
+  unit            String?
+  price           Float
+  imageUrl        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  favorites       Favorite[]
+  priceHistory    PriceHistory[]
 
   @@unique([store, name])
   @@index([store, category])
+  @@index([canonicalBrand])
   @@map("store_products")
 }
 
