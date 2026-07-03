@@ -23,8 +23,13 @@ jobs:
 
       - run: npx prisma generate
 
-      - name: Push schema to DB
-        run: npx prisma db push --accept-data-loss
+      - name: Push schema to DB (with retry for Neon cold start)
+        run: |
+          for i in 1 2 3; do
+            npx prisma db push --accept-data-loss && break
+            echo "Attempt $i failed, waiting 10s..."
+            sleep 10
+          done
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
