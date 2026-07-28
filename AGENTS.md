@@ -36,31 +36,52 @@ This project is a **learning project** for an ECU CS student. Prefer explaining 
 
 ### ON SALE badge
 - Favorited `StoreProduct` is matched to current `Product` by store + name.
-- `normalizedName` (planned) will generalize this cross-store.
+- Cross-store matching (planned) will use AI embeddings + ProductGroup table.
 
 ## File map
 
 ```
 app/
-  page.tsx                   Home: weekly specials grid
-  search/page.tsx            Full-text search across StoreProduct
-  product/[id]/page.tsx      Weekly special detail + price history
+  page.tsx                     Home: weekly specials grid
+  login/page.tsx               Google OAuth login
+  search/page.tsx              Full-text search across StoreProduct
+  product/[id]/page.tsx        Weekly special detail + price history
   store-product/[id]/page.tsx  Catalog product detail
-  favorites/page.tsx         User watchlist
-  cart/page.tsx              Cart (this week's specials only)
-  api/                       Route handlers (products, store-products, favorites, cart, price-history)
+  favorites/page.tsx           User watchlist
+  cart/page.tsx                Cart (this week's specials only)
+  api/                         Route handlers (products, store-products, favorites, cart, price-history, auth)
 
 components/
-  DealsGrid.tsx              Paginated specials grid
-  ProductCard.tsx            Deal card (sale price, discount badge, favorite/cart buttons)
-  FilterBar.tsx              Category + discount % filters
-  PriceHistoryChart.tsx      Recharts price graph (early stage)
+  DealsGrid.tsx                Paginated specials grid with filters + search
+  ProductCard.tsx              Deal card (sale price, discount badge, favorite/cart buttons)
+  FilterBar.tsx                Category dropdown filter
+  PriceHistoryChart.tsx        Recharts price graph
+  Navbar.tsx                   Top nav bar with auth dropdown
+  SearchBar.tsx                Search input form
+  FavoriteButton.tsx           Heart toggle
+  CartButton.tsx               Cart add/remove pill
+  CartFab.tsx                  Floating cart button (mobile)
+  BackButton.tsx               Back navigation
+  AuthProvider.tsx             NextAuth session wrapper
+  ServiceWorkerRegister.tsx    PWA service worker registration
+
+hooks/
+  useFavorites.tsx             Favorites context (localStorage + DB merge)
+  useCart.tsx                   Cart context (auth-only, optimistic UI)
+
+lib/
+  prisma.ts                    Prisma client singleton (Neon adapter)
+  auth.ts                      NextAuth v5 config (Google, JWT, PrismaAdapter)
+  canonicalize.ts              canonicalBrand normalization function
 
 scripts/
-  fetch-woolworths.ts        Woolworths specials scraper
-  fetch-woolworths-all.ts    Woolworths full catalog scraper (~53K products)
-  fetch-coles.ts             Coles specials scraper
-  fetch-coles-all.ts         Coles full catalog scraper (~24K products, 16 categories)
+  fetch-woolworths.ts          Woolworths specials scraper
+  fetch-woolworths-all.ts      Woolworths full catalog scraper (~53K products)
+  fetch-coles.ts               Coles specials scraper
+  fetch-coles-all.ts           Coles full catalog scraper (~29K products, 16 categories)
+  backfill-canonical-brand.ts  One-time: backfill canonicalBrand
+  verify-canonical-brand.ts    Utility: verify canonicalBrand coverage
+  export-brands.ts             Utility: brand similarity analysis
 
 .github/workflows/
   fetch-woolworths-specials.yml
@@ -71,5 +92,5 @@ scripts/
 
 ## What's in progress (do not claim as complete)
 
-- Price history graph (`PriceHistoryChart.tsx`) — early/incomplete
-- Coles full catalog first GitHub Actions run — needs verification
+- Cross-store product matching via AI embeddings + ProductGroup table
+- Push notifications (service worker registered, no push handler yet)

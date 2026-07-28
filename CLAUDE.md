@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Layer | Choice |
 |-------|--------|
-| Framework | Next.js 14+ (App Router) |
+| Framework | Next.js 16 (App Router) |
 | Database | PostgreSQL via Neon |
 | ORM | Prisma 7 |
 | Hosting | Vercel |
@@ -64,7 +64,7 @@ Vercel → reads Neon PostgreSQL → serves UI + API routes
 
 ### Key DB Models
 - `Product` — store, name, brand, category, unit, originalPrice, salePrice, discountPercent, imageUrl, validFrom, validTo
-- `StoreProduct` — store, name, brand, category, unit, price, imageUrl
+- `StoreProduct` — store, name, brand, canonicalBrand, category, unit, price, imageUrl
 - `Favorite` — User → StoreProduct
 - `CartItem` — User → Product
 
@@ -88,13 +88,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS store_products_name_trgm_idx
 
 ## Remaining Features
 
-### In progress
-- [ ] **Coles full catalog** — `fetch-coles-all.ts` done, needs first run to verify
-
 ### Planned
-- [ ] **Cart comparison** — Woolworths vs Coles total (needs normalizedName matching)
-- [ ] **Favorites cross-store** — `normalizedName` on StoreProduct, one heart covers both stores
-- [ ] **Price history graph** — Recharts on `/product/[id]`, uses PriceHistory table
+- [ ] **Cross-store matching** — AI embeddings (pgvector) + canonicalBrand for product entity resolution → ProductGroup table
+- [ ] **Favorites cross-store** — one heart covers both stores via ProductGroup
 - [ ] **Notifications** — PWA Web Push when favorited item goes on sale
+- [ ] **Cart comparison** — Woolworths vs Coles total via ProductGroup
 - [ ] **"Real deal" badge** — salePrice vs PriceHistory avg
 - [ ] **Personalized picks** — based on favorites/categories
