@@ -36,6 +36,28 @@
 - 소문자 변환, 하이픈→공백, 상표기호/아포스트로피/후행구두점 제거
 - **Why:** 1,315 유사쌍 분석 결과 전부 포맷 차이(대소문자, 하이픈, 특수문자)였고 의미적 판단이 필요한 케이스 없음. LLM 비용·복잡도 대비 규칙만으로 충분.
 
-## 크로스스토어 매칭 전략: canonicalBrand + pg_trgm (normalizedName 컬럼 병행)
-- 쿼리 시점에 `canonicalBrand` 일치 + `normalizedName` pg_trgm 유사도 > 0.7로 판단
-- **Why:** 알림과 찜 목록 배지가 같은 파이프라인의 두 출력. normalizedName 저장 컬럼이 있어야 찜 목록 페이지 로드 시 크로스스토어 배지를 빠르게 표시 가능.
+## 크로스스토어 매칭 전략: canonicalBrand + AI embeddings → ProductGroup table
+
+### Evolution
+- Phase 1 (완료): `canonicalBrand` 규칙 기반 정규화 — 81,709행 백필
+- Phase 2 (기존 계획): `normalizedName` + pg_trgm 유사도 > 0.7
+- Phase 2 (변경): `normalizedName` + embedding cosine similarity → ProductGroup table
+
+### Why embeddings replace pg_trgm for matching
+- pg_trgm은 문자열 유사도만 측정 — "Woolworths Homebrand Milk 2L" vs "Coles Own Brand Full Cream Milk 2L"은 유사도가 낮음
+- Embedding은 의미적 유사도를 캡처 — 같은 제품이지만 다른 이름도 높은 유사도
+- pg_trgm GIN 인덱스는 검색 기능에 계속 사용 (제거 안 함)
+
+### Why ProductGroup table (approach A) over query-time matching
+- 찜 목록 페이지 로드 시 매번 벡터 검색하면 느림 (81K × cosine)
+- 미리 계산된 매칭 결과를 ProductGroup에 저장 → JOIN으로 즉시 조회
+- 매칭이 틀려도 임베딩은 DB에 남아 있으니 threshold만 바꿔서 재생성 가능 (API 비용 0)
+- 새 상품은 스크래퍼 실행 시 incremental matching
+
+### University connection
+- ECU AI 과목: entity resolution, vector similarity, threshold tuning
+
+## DB: pgvector on Neon (별도 벡터 DB 불필요)
+- Neon이 pgvector 확장을 네이티브 지원
+- Pinecone/Weaviate 같은 별도 인프라 불필요 — 하나의 DB에서 관계형 + 벡터 쿼리
+- **Why:** 스택 단순화. ~81K 벡터는 Neon 무료 티어로 충분.

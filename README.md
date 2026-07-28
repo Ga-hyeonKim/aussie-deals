@@ -6,7 +6,7 @@ Weekly grocery deals aggregator for Woolworths & Coles (AU). Shows this week's s
 
 | Layer | Choice |
 |-------|--------|
-| Framework | Next.js 14+ (App Router) |
+| Framework | Next.js 16 (App Router) |
 | Database | PostgreSQL via Neon |
 | ORM | Prisma 7 |
 | Hosting | Vercel |
