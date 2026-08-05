@@ -1,74 +1,187 @@
 # AussieDeals
 
-Weekly grocery deals aggregator for Woolworths & Coles (AU). Shows this week's specials, tracks price history, and lets you build a shopping cart — mobile-first, designed for in-store use.
+A mobile-first grocery deals aggregator that scrapes Woolworths & Coles weekly
+specials, tracks price history, and helps Australian shoppers find the best
+deals in-store.
 
-## Tech Stack
+**Live:** [aussie-deals.vercel.app](https://aussie-deals.vercel.app/)
 
-| Layer | Choice |
-|-------|--------|
-| Framework | Next.js 16 (App Router) |
-| Database | PostgreSQL via Neon |
-| ORM | Prisma 7 |
-| Hosting | Vercel |
-| Scraper runner | GitHub Actions (cron) |
-| Charts | Recharts |
-| Auth | NextAuth.js v5 (Google OAuth) |
+![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-336791?logo=postgresql&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma)
+![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?logo=vercel)
+![GitHub Actions](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
 
-## Local Development
+<!-- TODO: Add screenshot or GIF of the app -->
 
-```bash
-npm install
-npm run dev
-```
+## Why I Built This
 
-Requires a `.env` file with:
-```
-DATABASE_URL=
-AUTH_SECRET=
-AUTH_GOOGLE_ID=
-AUTH_GOOGLE_SECRET=
-```
+Every week, Woolworths and Coles rotate their specials — but comparing deals
+across both stores means flipping between two apps while standing in the aisle.
+I built AussieDeals to solve my own problem first.
 
-## DB Commands
+Now anyone looking to save on groceries can compare both stores' weekly specials
+in one place. Price history tracking reveals whether a "sale" price is genuinely
+the lowest it's been — so shoppers can make informed decisions instead of
+falling for inflated discounts.
 
-```bash
-npx prisma db push          # sync schema to DB (dev only)
-npx prisma studio           # visual DB browser
-npx prisma generate         # after schema changes
-```
+## Key Features
+
+<!-- TODO: Add mobile screenshots -->
+<!--
+<p align="center">
+  <img src="docs/screenshots/deals-mobile.png" width="280" alt="Weekly deals view" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/price-history-mobile.png" width="280" alt="Price history chart" />
+</p>
+-->
+
+- **Weekly specials from both stores** — Automated scrapers collect Woolworths
+  & Coles deals every Wednesday via GitHub Actions
+- **Price history charts** — Track up to a year of price data per product to
+  spot genuine deals vs. inflated discounts
+- **Favourites watchlist** — Save products across both stores; get an ON SALE
+  badge when a watched item goes on special
+- **Shopping cart** — Build a list from this week's deals, grouped by store with
+  estimated totals
+- **Offline-capable PWA** — Installable on mobile with service worker caching
+  for in-store use on spotty Wi-Fi
+- **Full product catalog** — ~82K products indexed across both stores, searchable
+  with fuzzy text matching
 
 ## Architecture
 
-Woolworths & Coles block direct HTTP from AWS (Vercel serverless). All scraping runs on GitHub Actions using Playwright stealth.
+Woolworths and Coles block direct HTTP requests from cloud servers.
+All scraping runs on GitHub Actions using Playwright with stealth plugins,
+then writes to a Neon PostgreSQL database that Vercel reads from.
 
+```mermaid
+flowchart LR
+  subgraph GHA[GitHub Actions — Cron]
+    W[Woolworths Scraper]
+    C[Coles Scraper]
+  end
+
+  subgraph DB[Neon PostgreSQL]
+    P[(Product\nWeekly specials)]
+    SP[(StoreProduct\nFull catalog)]
+    PH[(PriceHistory)]
+  end
+
+  subgraph App[Vercel — Next.js]
+    UI[App Router\nSSR + API Routes]
+  end
+
+  W -->|Playwright stealth| DB
+  C -->|Playwright stealth\n+ Imperva bypass| DB
+  SP --> PH
+  DB --> UI
+  UI -->|PWA| User((Shopper 🛒))
 ```
-GitHub Actions (cron)
-  ├── fetch-woolworths-specials.yml   every Wednesday
-  ├── fetch-coles-specials.yml        every Wednesday +30min
-  ├── fetch-woolworths-catalog.yml    every other Monday
-  └── fetch-coles-catalog.yml         every other Monday +1h
 
-Vercel → reads Neon PostgreSQL → serves Next.js UI + API routes
-```
+## Technical Highlights
 
-### Data model
+| Decision | Why |
+|----------|-----|
+| **Stealth scraping on CI** | Both stores block cloud IPs — Playwright stealth + retry on GitHub Actions, no paid proxy needed |
+| **Two-table data model** | Weekly specials (dated) vs. full catalog (permanent) separated for clean deal logic + price history |
+| **Offline-first favourites** | localStorage → DB auto-merge on sign-in; PWA caching for spotty in-store Wi-Fi |
+| **Price history without ETL** | Scraper upserts history records inline — no separate pipeline, powers 52-week charts |
 
-| Table | What it holds |
-|-------|--------------|
-| `Product` | Weekly specials — salePrice, discountPercent, validFrom/To |
-| `StoreProduct` | Full catalog — current price, no date scope |
-| `PriceHistory` | Per-product price log for history graphs |
-| `Favorite` | User watchlist → StoreProduct |
-| `CartItem` | User cart → Product (this week's deals only) |
+## Tech Stack
 
-## Manual Scraper Runs
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Framework | Next.js 16 (App Router) | Server components for fast initial load; API routes co-located with UI |
+| Database | PostgreSQL on Neon | Serverless Postgres with branching; generous free tier |
+| ORM | Prisma 7 | Type-safe queries, schema-as-code with `db push` workflow |
+| Auth | NextAuth.js v5 | Google OAuth with JWT sessions; adapts to Prisma out of the box |
+| Scraping | Playwright + stealth plugins | Full browser needed to bypass anti-bot; runs headless on CI |
+| Charts | Recharts | React-native charting; lightweight for simple price history graphs |
+| Hosting | Vercel | Zero-config Next.js deploys; free tier covers this project's scale |
+| CI/CD | GitHub Actions | Cron-triggered scrapers + Playwright pre-installed on runners |
+
+## Development Journey
+
+### Phase 1 — Concept & first scraper
+
+Existing grocery deal apps in Australia felt slow, poorly designed, and
+required a native install. A PWA made more sense — works from the browser on
+any device, and if the project outgrows a web app, a native version can come
+later. Started with Woolworths — their undocumented browse API made it the
+easier target — and built a basic specials viewer.
+
+### Phase 2 — Coles & the anti-bot fight
+
+Coles has no public API. Product data is embedded in server-rendered
+`__NEXT_DATA__`, protected behind Imperva's anti-bot challenges. Getting
+reliable scraping working required Playwright stealth plugins, retry logic
+with backoff, and careful page-navigation patterns to avoid detection.
+
+### Phase 3 — Full catalog & data pipeline
+
+A specials-only view wasn't enough for price comparison or history tracking.
+I needed the full product catalog (~82K products across both stores), which
+meant building GitHub Actions pipelines that could run for hours without
+timing out — and upsert tens of thousands of rows per run.
+
+### Phase 4 — Cart vs. Favourites split
+
+Early on, the cart doubled as a wishlist. But the two serve different
+lifecycles: cart items are tied to this week's deals and expire when the sale
+ends; favourites are permanent and will eventually trigger notifications when
+a watched product goes on sale. Separating them unlocked the current
+watchlist + ON SALE badge system.
+
+### Current — stabilising & preparing for AI features
+
+The core platform is live with ~82K indexed products, automated weekly
+scraping, and price history tracking. Next focus is cross-store product
+matching using AI embeddings (pgvector) so shoppers can compare the same
+item across Woolworths and Coles.
+
+## Roadmap
+
+- [ ] **Cross-store product matching** — AI embeddings (pgvector) to identify
+      the same product across Woolworths and Coles for direct price comparison
+- [ ] **Sale notifications** — PWA Web Push alerts when a favourited item goes
+      on special
+- [ ] **"Real deal" badge** — compare sale price against historical average to
+      flag genuinely good deals
+- [ ] **Cart comparison** — side-by-side Woolworths vs. Coles totals for the
+      same shopping list
+- [ ] **Personalised picks** — recommend deals based on favourite categories
+      and purchase patterns
+
+## Getting Started
+
+<details>
+<summary>Local development setup</summary>
+
+### Prerequisites
+
+- Node.js 22+
+- PostgreSQL database (or a [Neon](https://neon.tech) free tier account)
+
+### Setup
 
 ```bash
-npx tsx scripts/fetch-woolworths.ts
-npx tsx scripts/fetch-woolworths-all.ts
-npx tsx scripts/fetch-woolworths-all.ts --from-json
-
-npx tsx scripts/fetch-coles.ts
-npx tsx scripts/fetch-coles-all.ts
-npx tsx scripts/fetch-coles-all.ts --from-json
+git clone https://github.com/Ga-hyeonKim/aussie-deals.git
+cd aussie-deals
+npm install
+# create .env and fill in your credentials (see below)
+npx prisma db push
+npm run dev
 ```
+
+### Environment variables
+
+```
+DATABASE_URL=           # PostgreSQL connection string
+AUTH_SECRET=            # NextAuth secret (generate with: npx auth secret)
+AUTH_GOOGLE_ID=         # Google OAuth client ID
+AUTH_GOOGLE_SECRET=     # Google OAuth client secret
+```
+
+</details>
