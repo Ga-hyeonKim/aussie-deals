@@ -38,24 +38,37 @@ model Product {
   @@index([store, validFrom, validTo])
 }
 
+model ProductGroup {
+  id        String         @id @default(cuid())
+  name      String
+  createdAt DateTime       @default(now())
+  products  StoreProduct[]
+
+  @@map("product_groups")
+}
+
 model StoreProduct {
   id              String        @id @default(cuid())
   store           Store
   name            String
   brand           String?
   canonicalBrand  String?       @map("canonical_brand")
+  normalizedName  String?       @map("normalized_name")
   category        String
   unit            String?
   price           Float
   imageUrl        String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  productGroupId  String?       @map("product_group_id")
+  productGroup    ProductGroup? @relation(fields: [productGroupId], references: [id])
   favorites       Favorite[]
   priceHistory    PriceHistory[]
 
   @@unique([store, name])
   @@index([store, category])
   @@index([canonicalBrand])
+  @@index([productGroupId])
   @@map("store_products")
 }
 

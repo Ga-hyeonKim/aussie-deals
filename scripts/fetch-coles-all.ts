@@ -9,6 +9,7 @@ import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
+import { normalizeName } from "../lib/normalize";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "playwright";
@@ -225,6 +226,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
           update: {
             brand: p.brand,
             canonicalBrand: canonicalizeBrand(p.brand),
+            normalizedName: normalizeName(p.name, p.brand),
             unit: p.unit,
             imageUrl: p.imageUrl,
             category: p.category,
@@ -234,6 +236,7 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
             name: p.name,
             brand: p.brand,
             canonicalBrand: canonicalizeBrand(p.brand),
+            normalizedName: normalizeName(p.name, p.brand),
             category: p.category,
             unit: p.unit,
             price: p.price,
