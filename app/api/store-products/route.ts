@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
 
   const products = await prisma.storeProduct.findMany({
     where: { name: { contains: q, mode: "insensitive" } },
-    take: 20,
+    take: 200,
     orderBy: { name: "asc" },
   })
 

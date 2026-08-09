@@ -8,14 +8,33 @@ export async function GET() {
 
   const favorites = await prisma.favorite.findMany({
     where: { userId: session.user.id },
-    include: { storeProduct: true },
+    include: {
+      storeProduct: {
+        include: {
+          productGroup: {
+            include: { products: true },
+          },
+        },
+      },
+    },
     orderBy: { createdAt: "desc" },
   })
 
   if (favorites.length === 0) return NextResponse.json([])
 
   const now = new Date()
-  const nameFilters = favorites.map(f => ({ store: f.storeProduct.store, name: f.storeProduct.name }))
+
+  // Build name filters for both the favorited product AND its cross-store counterpart
+  const nameFilters: { store: "WOOLWORTHS" | "COLES"; name: string }[] = []
+  for (const f of favorites) {
+    nameFilters.push({ store: f.storeProduct.store, name: f.storeProduct.name })
+    const crossStore = f.storeProduct.productGroup?.products.find(
+      p => p.id !== f.storeProduct.id
+    )
+    if (crossStore) {
+      nameFilters.push({ store: crossStore.store, name: crossStore.name })
+    }
+  }
 
   const [currentDeals, recentProducts] = await Promise.all([
     prisma.product.findMany({
@@ -25,7 +44,6 @@ export async function GET() {
         OR: nameFilters,
       },
     }),
-    // Most recent Product per item (even expired) — gives us the real originalPrice
     prisma.product.findMany({
       where: { OR: nameFilters },
       orderBy: { validTo: "desc" },
@@ -41,10 +59,22 @@ export async function GET() {
     favorites.map(f => {
       const key = `${f.storeProduct.store}:${f.storeProduct.name}`
       const recent = recentMap.get(key)
+
+      const crossStore = f.storeProduct.productGroup?.products.find(
+        p => p.id !== f.storeProduct.id
+      ) ?? null
+      const crossKey = crossStore ? `${crossStore.store}:${crossStore.name}` : null
+      const crossRecent = crossKey ? recentMap.get(crossKey) : null
+
       return {
         ...f,
         currentDeal: dealMap.get(key) ?? null,
         regularPrice: recent?.originalPrice ?? null,
+        crossStore: crossStore ? {
+          ...crossStore,
+          currentDeal: crossKey ? dealMap.get(crossKey) ?? null : null,
+          regularPrice: crossRecent?.originalPrice ?? null,
+        } : null,
       }
     })
   )
@@ -121,6 +151,21 @@ export async function DELETE(request: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
+
+  if (body.all) {
+    const { count } = await prisma.favorite.deleteMany({
+      where: { userId: session.user.id },
+    })
+    return NextResponse.json({ ok: true, deleted: count })
+  }
+
+  if (body.storeProductIds && Array.isArray(body.storeProductIds)) {
+    const { count } = await prisma.favorite.deleteMany({
+      where: { userId: session.user.id, storeProductId: { in: body.storeProductIds } },
+    })
+    return NextResponse.json({ ok: true, deleted: count })
+  }
+
   const storeProductId = await resolveStoreProductId(body, false)
   if (!storeProductId) return NextResponse.json({ ok: true })
 

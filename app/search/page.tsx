@@ -15,7 +15,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const products = q
     ? await prisma.storeProduct.findMany({
         where: { name: { contains: q, mode: "insensitive" } },
-        take: 60,
+        take: 200,
         orderBy: { name: "asc" },
       })
     : []
