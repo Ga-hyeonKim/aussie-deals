@@ -67,6 +67,16 @@
 - 별도 조인 테이블(N:M) 대신 1:N 선택
 - **Why:** 하나의 상품이 여러 그룹에 동시에 속할 유스케이스가 없음. FK가 쿼리 단순 (JOIN 하나 적음) + 모바일 응답 속도에 유리.
 
+## Embedding 차원: 1536 → 256
+- OpenAI `text-embedding-3-small`의 `dimensions` 파라미터로 256차원 사용
+- **Why:** Neon 무료 티어 512MB 한도. 1536차원은 벡터만 606MB, 256차원은 101MB로 수용 가능. 같은 canonicalBrand 내 비교라 좁은 범위에서 256차원 충분. OpenAI 벤치마크상 성능차 ~1%p.
+
+## 매칭 threshold: 0.95 (보수적 시작)
+- 0.85: Tim Tam Mangoes↔Caramel, Cadbury Sticky Toffee↔Raspberry 등 오매칭 다수
+- 0.93: Huggies Boys↔Girls, Noshu 97%↔95% 등 여전히 문제
+- 0.95: 대부분 올바른 매칭. 일부 이름 표기 차이(Val Verde Passata Sauce↔Cooking Sauce)도 잡힘
+- **Why:** 잘못된 ProductGroup은 사용자에게 엉뚱한 상품 보여줌 → 보수적 시작 후 100쌍 라벨링으로 미세 조정. threshold 낮추면 기존 그룹은 유지되고 추가 매칭만 생김.
+
 ## Favorites: 로그인 필수 (localStorage 제거)
 - 기존: 비로그인 → localStorage, 로그인 시 DB 병합
 - 변경: 비로그인 하트 클릭 → /login 리다이렉트, DB 전용
