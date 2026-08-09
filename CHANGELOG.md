@@ -3,9 +3,16 @@
 Format: significant user-facing or architecture changes only.
 
 ## [In progress]
-- AI embedding 기반 크로스스토어 매칭 — 코드 완료, DB 실행 대기 (pgvector + ProductGroup)
+- Favorites cross-store 통합 검색 (normalizedName 기반, 스토어 무관)
 - 세일 감지 파이프라인 (찜 목록 배지 + 푸시 알림)
 - "Real deal" badge
+
+## 2026-08-09
+- AI embedding 크로스스토어 매칭 가동: 256차원 임베딩 98,595개 + ProductGroup 2,438개 생성
+- 찜 목록: 비로그인 하트 → 토스트 안내 ("Sign in to save favourites")
+- 찜 목록: 검색 결과에 WATCHING 뱃지 + smooth scroll to watchlist
+- Cart/Favorites: Clear All에 confirm 다이얼로그 추가
+- 검색 결과 limit 확대 (60→200)
 
 ## 2026-08-05
 - `normalizedName` 정규화 필드 추가 (브랜드 제거 + 단위 통일, 스크래퍼 4개 연결)
