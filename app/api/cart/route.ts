@@ -39,13 +39,27 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { productId } = await request.json()
+  const body = await request.json()
+
+  if (body.all) {
+    const { count } = await prisma.cartItem.deleteMany({
+      where: { userId: session.user.id },
+    })
+    return NextResponse.json({ ok: true, deleted: count })
+  }
+
+  if (body.productIds && Array.isArray(body.productIds)) {
+    const { count } = await prisma.cartItem.deleteMany({
+      where: { userId: session.user.id, productId: { in: body.productIds } },
+    })
+    return NextResponse.json({ ok: true, deleted: count })
+  }
 
   await prisma.cartItem.delete({
     where: {
       userId_productId: {
         userId: session.user.id,
-        productId,
+        productId: body.productId,
       },
     },
   })
