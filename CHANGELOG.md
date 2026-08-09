@@ -3,9 +3,16 @@
 Format: significant user-facing or architecture changes only.
 
 ## [In progress]
-- AI embedding 기반 크로스스토어 매칭 (pgvector + ProductGroup table)
+- AI embedding 기반 크로스스토어 매칭 — 코드 완료, DB 실행 대기 (pgvector + ProductGroup)
 - 세일 감지 파이프라인 (찜 목록 배지 + 푸시 알림)
 - "Real deal" badge
+
+## 2026-08-05
+- `normalizedName` 정규화 필드 추가 (브랜드 제거 + 단위 통일, 스크래퍼 4개 연결)
+- `ProductGroup` 모델 추가 — 크로스스토어 매칭 결과 저장 테이블
+- 찜 목록: 반대쪽 매장 가격/세일 정보 카드에 표시
+- 장바구니/찜 목록: Edit 모드 추가 (선택 삭제 + 전체 삭제)
+- Favorites 로그인 필수로 변경 (비로그인 하트 → 로그인 페이지 리다이렉트)
 
 ## 2026-07-28
 - GitHub Actions: prisma db push retry 로직 추가 (Neon cold start 대응, 4개 workflow 전부)
