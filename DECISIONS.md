@@ -61,3 +61,13 @@
 - Neon이 pgvector 확장을 네이티브 지원
 - Pinecone/Weaviate 같은 별도 인프라 불필요 — 하나의 DB에서 관계형 + 벡터 쿼리
 - **Why:** 스택 단순화. ~81K 벡터는 Neon 무료 티어로 충분.
+
+## ProductGroup: FK(1:N) 방식 (조인 테이블 아님)
+- StoreProduct에 `productGroupId` FK 추가, ProductGroup이 여러 StoreProduct를 가짐
+- 별도 조인 테이블(N:M) 대신 1:N 선택
+- **Why:** 하나의 상품이 여러 그룹에 동시에 속할 유스케이스가 없음. FK가 쿼리 단순 (JOIN 하나 적음) + 모바일 응답 속도에 유리.
+
+## Favorites: 로그인 필수 (localStorage 제거)
+- 기존: 비로그인 → localStorage, 로그인 시 DB 병합
+- 변경: 비로그인 하트 클릭 → /login 리다이렉트, DB 전용
+- **Why:** 데이터 일관성 + 기기 간 동기화 보장. 핵심 플로우(집에서 담기 → 매장에서 보기)가 로그인 전제. localStorage 병합 로직의 엣지 케이스 제거.
