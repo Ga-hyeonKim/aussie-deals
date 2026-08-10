@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { prisma } from "@/lib/prisma"
 import DealsGrid from "@/components/DealsGrid"
 
@@ -44,7 +45,9 @@ export default async function Home() {
             This week&apos;s specials have not been updated yet.
           </p>
         ) : (
-          <DealsGrid products={products} />
+          <Suspense>
+            <DealsGrid products={products} />
+          </Suspense>
         )}
       </div>
     </main>

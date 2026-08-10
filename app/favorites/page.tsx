@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { useFavorites } from "@/hooks/useFavorites"
 import Image from "next/image"
@@ -8,6 +9,29 @@ import Link from "next/link"
 import FavoriteButton from "@/components/FavoriteButton"
 import type { StoreProductModel } from "@/app/generated/prisma/models"
 import type { ProductModel } from "@/app/generated/prisma/models"
+
+type SearchResult = StoreProductModel & { otherStore?: StoreProductModel }
+
+function StoreBadge({ store }: { store: string }) {
+  const isWool = store === "WOOLWORTHS"
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${isWool ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>
+      {isWool ? "WOOLWORTHS" : "COLES"}
+    </span>
+  )
+}
+
+function PriceRow({ store, price }: { store: string; price: number }) {
+  const isWool = store === "WOOLWORTHS"
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`w-11 rounded px-1 py-0.5 text-center text-[9px] font-bold leading-none ${isWool ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>
+        {isWool ? "WOOL" : "COLES"}
+      </span>
+      <span className="text-sm font-bold text-gray-900">${price.toFixed(2)}</span>
+    </div>
+  )
+}
 
 type CrossStoreInfo = {
   store: string
@@ -28,16 +52,26 @@ type FavoriteWithDeal = {
 }
 
 export default function FavoritesPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const { data: session } = useSession()
   const { favorites, isFavorited } = useFavorites()
   const [favList, setFavList] = useState<FavoriteWithDeal[]>([])
   const [loading, setLoading] = useState(true)
-  const [query, setQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<StoreProductModel[]>([])
+  const query = searchParams.get("q") ?? ""
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const watchlistRef = useRef<HTMLHeadingElement>(null)
+
+  function setQuery(value: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value) params.set("q", value)
+    else params.delete("q")
+    const qs = params.toString()
+    router.replace(qs ? `/favorites?${qs}` : "/favorites", { scroll: false })
+  }
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -58,15 +92,17 @@ export default function FavoritesPage() {
       return
     }
 
+    const controller = new AbortController()
     const timer = setTimeout(() => {
       setSearching(true)
-      fetch(`/api/store-products?q=${encodeURIComponent(query)}`)
+      fetch(`/api/store-products?q=${encodeURIComponent(query)}&grouped=1`, { signal: controller.signal })
         .then(res => (res.ok ? res.json() : []))
         .then(setSearchResults)
+        .catch(() => {})
         .finally(() => setSearching(false))
     }, 300)
 
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); controller.abort() }
   }, [query])
 
   return (
@@ -117,8 +153,9 @@ export default function FavoritesPage() {
                   return (
                     <div
                       key={product.id}
-                      className={`flex flex-col gap-2 rounded-2xl border p-3 shadow-sm transition-colors ${watching ? "border-green-400 bg-green-50" : "border-gray-200 bg-white"}`}
+                      className={`relative flex flex-col gap-2 rounded-2xl border p-3 shadow-sm transition-colors ${watching ? "border-green-400 bg-green-50" : "border-gray-200 bg-white"}`}
                     >
+                      <Link href={`/store-product/${product.id}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={product.name} />
                       {watching && (
                         <span className="self-start rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">WATCHING</span>
                       )}
@@ -129,16 +166,27 @@ export default function FavoritesPage() {
                       )}
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-xs uppercase text-gray-400">{product.store}</p>
                           <p className="truncate text-sm font-semibold leading-tight text-gray-900">{product.name}</p>
                           {product.brand && (
                             <p className="truncate text-xs text-gray-500">{product.brand}</p>
                           )}
-                          <p className="mt-1 text-sm font-bold text-gray-900">${product.price.toFixed(2)}</p>
+                          {product.otherStore ? (
+                            <div className="mt-1.5 flex flex-col gap-1">
+                              <PriceRow store={product.store} price={product.price} />
+                              <PriceRow store={product.otherStore.store} price={product.otherStore.price} />
+                            </div>
+                          ) : (
+                            <>
+                              <StoreBadge store={product.store} />
+                              <p className="mt-1 text-sm font-bold text-gray-900">${product.price.toFixed(2)}</p>
+                            </>
+                          )}
                         </div>
-                        <FavoriteButton storeProductId={product.id} productId={product.id} onToggle={() => {
-                          watchlistRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                        }} />
+                        <div className="relative z-10 shrink-0">
+                          <FavoriteButton storeProductId={product.id} productId={product.id} onToggle={() => {
+                            watchlistRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                          }} />
+                        </div>
                       </div>
                     </div>
                   )
@@ -192,7 +240,7 @@ export default function FavoritesPage() {
                   )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-gray-400">{fav.storeProduct.store}</p>
+                      <StoreBadge store={fav.storeProduct.store} />
                       <h2 className="truncate text-sm font-semibold leading-tight text-gray-900">{fav.storeProduct.name}</h2>
                       {fav.storeProduct.brand && (
                         <p className="truncate text-xs text-gray-500">{fav.storeProduct.brand}</p>
@@ -239,7 +287,7 @@ export default function FavoritesPage() {
 
                   {fav.crossStore && (
                     <div className="mt-1 rounded-lg bg-gray-50 px-2.5 py-2">
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{fav.crossStore.store}</p>
+                      <StoreBadge store={fav.crossStore.store} />
                       {fav.crossStore.currentDeal ? (
                         <div className="flex items-center gap-1.5">
                           <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">SALE</span>
