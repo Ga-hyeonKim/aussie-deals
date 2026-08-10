@@ -11,7 +11,7 @@ neonConfig.webSocketConstructor = ws;
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
-const SIMILARITY_THRESHOLD = 0.95;
+const SIMILARITY_THRESHOLD = 0.92;
 
 interface MatchCandidate {
   woolworths_id: string;
