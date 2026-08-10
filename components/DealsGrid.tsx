@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { ProductModel } from "@/app/generated/prisma/models"
 import ProductCard from "./ProductCard"
 import FilterBar from "./FilterBar"
@@ -24,77 +25,50 @@ type Props = {
 }
 
 export default function DealsGrid({ products }: Props) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const stores = [...new Set(products.map(p => p.store))].sort()
-  const [selectedStore, setSelectedStore] = useState<string>(stores[0] ?? "WOOLWORTHS")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [discountFilter, setDiscountFilter] = useState<number | null>(null)
+
+  const selectedStore = (searchParams.get("store")?.toUpperCase() ?? stores[0] ?? "WOOLWORTHS")
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1)
+  const displayCount = page * PAGE_SIZE
+  const selectedCategory = searchParams.get("category") ?? null
+  const discountParam = searchParams.get("discount")
+  const discountFilter = discountParam ? parseInt(discountParam) : null
+
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
-  const scrollRestoreRef = useRef<number | null>(null)
-  const isFirstRender = useRef(true)
-  const isFirstDisplayCountEffect = useRef(true)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(searchQuery), 250)
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Reset on filter changes — skip initial mount so restore effect can read sessionStorage first
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
+  function updateParams(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) params.delete(key)
+      else params.set(key, value)
     }
-    setDisplayCount(PAGE_SIZE)
-    sessionStorage.removeItem('dealsDisplayCount')
-    sessionStorage.removeItem('dealsScrollY')
-  }, [selectedStore, selectedCategory, discountFilter, debouncedQuery])
+    const qs = params.toString()
+    router.replace(qs ? `?${qs}` : "/", { scroll: false })
+  }
 
-  // Restore scroll + displayCount when returning from a product page
-  useEffect(() => {
-    if (!sessionStorage.getItem('dealsReturning')) return
-    sessionStorage.removeItem('dealsReturning')
+  function handleStoreChange(store: string) {
+    updateParams({ store: store.toLowerCase(), category: null, page: null, discount: null })
+  }
 
-    const savedCount = parseInt(sessionStorage.getItem('dealsDisplayCount') ?? '')
-    const savedScroll = parseInt(sessionStorage.getItem('dealsScrollY') ?? '0')
+  function handleCategoryChange(category: string | null) {
+    updateParams({ category, page: null })
+  }
 
-    if (!isNaN(savedCount) && savedCount > PAGE_SIZE) {
-      scrollRestoreRef.current = savedScroll
-      setDisplayCount(savedCount)
-    } else {
-      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' }), 100)
-    }
-  }, [])
+  function handleDiscountChange(value: number | null) {
+    updateParams({ discount: value?.toString() ?? null, page: null })
+  }
 
-  // Scroll to saved position AFTER displayCount re-render (skip mount, only run on change)
-  useEffect(() => {
-    if (isFirstDisplayCountEffect.current) {
-      isFirstDisplayCountEffect.current = false
-      return
-    }
-    if (scrollRestoreRef.current === null) return
-    const y = scrollRestoreRef.current
-    scrollRestoreRef.current = null
-    setTimeout(() => window.scrollTo({ top: y, behavior: 'instant' }), 100)
-  }, [displayCount])
-
-  // Persist displayCount whenever it changes
-  useEffect(() => {
-    sessionStorage.setItem('dealsDisplayCount', String(displayCount))
-  }, [displayCount])
-
-  // Persist scroll position continuously
-  useEffect(() => {
-    const onScroll = () => sessionStorage.setItem('dealsScrollY', String(Math.round(window.scrollY)))
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  // Set returning flag on unmount — more reliable than onClick bubbling
-  useEffect(() => {
-    return () => { sessionStorage.setItem('dealsReturning', 'true') }
-  }, [])
+  function handleLoadMore() {
+    updateParams({ page: String(page + 1) })
+  }
 
   const storeProducts = products.filter(p => p.store === selectedStore)
   const categories = [...new Set(storeProducts.map(p => p.category))].sort()
@@ -119,14 +93,8 @@ export default function DealsGrid({ products }: Props) {
   const visible = filtered.slice(0, displayCount)
   const hasMore = filtered.length > displayCount
 
-  function handleStoreChange(store: string) {
-    setSelectedStore(store)
-    setSelectedCategory(null)
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      {/* sticky toolbar — sticks below navbar (46px) */}
       <div className="sticky top-[46px] z-30 bg-gray-50 pb-3 flex flex-col gap-3 shadow-[0_4px_6px_-4px_rgba(0,0,0,0.06)]">
         <input
           type="text"
@@ -157,7 +125,7 @@ export default function DealsGrid({ products }: Props) {
             {DISCOUNT_FILTERS.map(f => (
               <button
                 key={f.label}
-                onClick={() => setDiscountFilter(f.value)}
+                onClick={() => handleDiscountChange(f.value)}
                 className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
                   discountFilter === f.value
                     ? "bg-white text-gray-900 shadow-sm"
@@ -169,7 +137,7 @@ export default function DealsGrid({ products }: Props) {
             ))}
           </div>
         </div>
-        <FilterBar categories={categories} selected={selectedCategory} onSelect={setSelectedCategory} />
+        <FilterBar categories={categories} selected={selectedCategory} onSelect={handleCategoryChange} />
       </div>
 
       <p className="text-sm text-gray-500">
@@ -182,7 +150,7 @@ export default function DealsGrid({ products }: Props) {
       </div>
       {hasMore && (
         <button
-          onClick={() => setDisplayCount(c => c + PAGE_SIZE)}
+          onClick={handleLoadMore}
           className="mx-auto rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
         >
           Load more ({filtered.length - displayCount} remaining)
