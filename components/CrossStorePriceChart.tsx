@@ -14,6 +14,17 @@ type PricePoint = {
 type StoreInput = {
   storeProductId: string
   store: string
+  /**
+   * What the shopper pays today, resolved by the page from the catalogue price
+   * and any live special.
+   *
+   * PriceHistory cannot supply this. It is a patchy archive — the two stores'
+   * series stop on different days for 97% of matched products — so reading
+   * "now" off the end of each one compares a stale week against a fresh one.
+   * That is how this chart came to announce a $9.40 Woolworths price two weeks
+   * after the sale ended, under a card that said $15.80.
+   */
+  currentPrice: number
 }
 
 type Props = {
@@ -69,6 +80,8 @@ export default function CrossStorePriceChart({ stores }: Props) {
     return () => { cancelled = true }
   }, [stores])
 
+  const today = new Date().toISOString().slice(0, 10)
+
   // Deduped per-store readings, before any range filtering
   const clean = useMemo(() => {
     const out: Record<string, { date: string; price: number }[]> = {}
@@ -80,14 +93,19 @@ export default function CrossStorePriceChart({ stores }: Props) {
       for (const p of series[s.store] ?? []) {
         perDay.set(new Date(p.recordedAt).toISOString().slice(0, 10), p.price)
       }
+      // Today always comes from the page, overwriting whatever the archive holds
+      // for today. Both series therefore end on the same day, which is what makes
+      // the two lines comparable at their right edge.
+      perDay.set(today, s.currentPrice)
+
       out[s.store] = [...perDay.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([date, price]) => ({ date, price }))
     }
     return out
-  }, [series, stores])
+  }, [series, stores, today])
 
-  // Only offer ranges that actually cut something. With ~3 months of history a
+  // Only offer ranges that actually cut something. With ~4 months of history a
   // "6M" button would return the same view as "All" — the options grow into
   // existence as the archive does, so a range never silently does nothing.
   const available = useMemo(() => {
@@ -104,17 +122,13 @@ export default function CrossStorePriceChart({ stores }: Props) {
   const model = useMemo(() => {
     const cutoff = activeRange.days ? Date.now() - activeRange.days * DAY : null
     const byDate = new Map<string, Record<string, number | string>>()
-    const stats: Record<string, { now: number; low: number; avg: number } | null> = {}
+    const stats: Record<string, { now: number; low: number; avg: number }> = {}
 
     for (const s of stores) {
+      // Today's point is never cut by a range, so this is never empty.
       const points = (clean[s.store] ?? []).filter(
         p => cutoff === null || new Date(p.date).getTime() >= cutoff
       )
-
-      if (points.length === 0) {
-        stats[s.store] = null
-        continue
-      }
 
       for (const { date, price } of points) {
         if (!byDate.has(date)) byDate.set(date, { date })
@@ -123,7 +137,7 @@ export default function CrossStorePriceChart({ stores }: Props) {
 
       const prices = points.map(p => p.price)
       stats[s.store] = {
-        now: prices[prices.length - 1],
+        now: s.currentPrice,
         low: Math.min(...prices),
         avg: prices.reduce((a, b) => a + b, 0) / prices.length,
       }
@@ -133,12 +147,10 @@ export default function CrossStorePriceChart({ stores }: Props) {
       String(a.date).localeCompare(String(b.date))
     )
 
-    const present = stores.map(s => stats[s.store]).filter(Boolean) as { now: number; low: number; avg: number }[]
-
     // One benchmark, not one per store: the best this product has been at
     // either store. Per-store lows would measure each line against its own
     // yardstick and flatter whichever store is simply expensive.
-    const bestEver = present.length ? Math.min(...present.map(p => p.low)) : null
+    const bestEver = Math.min(...stores.map(s => stats[s.store].low))
 
     const all = data.flatMap(row =>
       stores.map(s => row[s.store]).filter((v): v is number => typeof v === "number")
@@ -153,23 +165,17 @@ export default function CrossStorePriceChart({ stores }: Props) {
 
   if (loading) return <div className="h-56 animate-pulse rounded-xl bg-gray-100 dark:bg-neutral-800" />
 
-  const live = stores
-    .map(s => ({ store: s.store, st: model.stats[s.store] }))
-    .filter((x): x is { store: string; st: { now: number; low: number; avg: number } } => Boolean(x.st))
+  const live = stores.map(s => ({ store: s.store, st: model.stats[s.store] }))
 
-  if (live.length === 0) {
-    return (
-      <p className="text-xs text-gray-400 dark:text-neutral-500">
-        No price history yet — check back after the next weekly update.
-      </p>
-    )
-  }
+  // One point per store is today's price repeated — a chart of that says
+  // nothing, and "lowest on record" off a single reading would be a lie.
+  const chartable = model.data.length > 1
 
   // Verdict — the conclusion, so the reader doesn't have to derive it
   const cheapest = live.reduce((a, b) => (a.st.now <= b.st.now ? a : b))
   const other = live.find(x => x !== cheapest)
   const gap = other ? other.st.now - cheapest.st.now : 0
-  const atBest = model.bestEver !== null && cheapest.st.now <= model.bestEver * 1.02
+  const atBest = chartable && cheapest.st.now <= model.bestEver * 1.02
 
   return (
     <div>
@@ -188,157 +194,163 @@ export default function CrossStorePriceChart({ stores }: Props) {
         </p>
       </div>
 
-      <div className="mb-2 flex items-center justify-between gap-3">
-        {/* Legend — identity in text, never colour alone */}
-        <div className="flex flex-wrap gap-3">
-          {live.map(({ store }) => (
-            <span key={store} className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-neutral-300">
-              <span
-                aria-hidden
-                className="h-2.5 w-2.5 rounded-[3px]"
-                style={{ backgroundColor: STORE_VAR[store] ?? "#6b7280" }}
-              />
-              {STORE_LABEL[store] ?? store}
-            </span>
-          ))}
-        </div>
+      {!chartable ? (
+        <p className="text-xs text-gray-400 dark:text-neutral-500">
+          No price history yet — the chart appears once a few weekly updates have run.
+        </p>
+      ) : (
+        <>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            {/* Legend — identity in text, never colour alone */}
+            <div className="flex flex-wrap gap-3">
+              {live.map(({ store }) => (
+                <span key={store} className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 rounded-[3px]"
+                    style={{ backgroundColor: STORE_VAR[store] ?? "#6b7280" }}
+                  />
+                  {STORE_LABEL[store] ?? store}
+                </span>
+              ))}
+            </div>
 
-        {available.length > 1 && (
-          <div className="flex shrink-0 gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-neutral-800">
-            {available.map(r => (
-              <button
-                key={r.label}
-                onClick={() => setRange(r.label)}
-                aria-pressed={activeRange.label === r.label}
-                className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
-                  activeRange.label === r.label
-                    ? "bg-white text-gray-900 shadow-sm dark:bg-neutral-700 dark:text-neutral-100"
-                    : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-                }`}
-              >
-                {r.label}
-              </button>
+            {available.length > 1 && (
+              <div className="flex shrink-0 gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-neutral-800">
+                {available.map(r => (
+                  <button
+                    key={r.label}
+                    onClick={() => setRange(r.label)}
+                    aria-pressed={activeRange.label === r.label}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      activeRange.label === r.label
+                        ? "bg-white text-gray-900 shadow-sm dark:bg-neutral-700 dark:text-neutral-100"
+                        : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <ResponsiveContainer width="100%" height={190}>
+            <LineChart data={model.data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
+                tickLine={false}
+                axisLine={{ stroke: "var(--chart-grid)" }}
+                tickMargin={8}
+                minTickGap={36}
+                tickFormatter={fmtDate}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
+                tickLine={false}
+                axisLine={false}
+                width={46}
+                domain={model.domain}
+                tickCount={4}
+                tickFormatter={v => `$${Number(v).toFixed(Number(v) % 1 === 0 ? 0 : 2)}`}
+              />
+              <Tooltip
+                cursor={{ stroke: "var(--chart-axis)", strokeWidth: 1 }}
+                formatter={(v, name) => [money(Number(v)), STORE_LABEL[String(name)] ?? String(name)]}
+                labelFormatter={d => new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 10,
+                  border: "1px solid var(--chart-grid)",
+                  background: "var(--chart-surface)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                  padding: "8px 10px",
+                }}
+              />
+
+              <ReferenceLine
+                y={model.bestEver}
+                stroke="var(--chart-rule)"
+                strokeDasharray="4 3"
+                strokeWidth={1}
+                label={{
+                  value: `best ${money(model.bestEver)}`,
+                  position: "insideBottomRight",
+                  fontSize: 10,
+                  fill: "var(--chart-axis)",
+                }}
+              />
+
+              {live.map(({ store }, i) => (
+                <Line
+                  key={store}
+                  type="stepAfter"
+                  dataKey={store}
+                  name={store}
+                  stroke={STORE_VAR[store] ?? "#6b7280"}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  connectNulls
+                  isAnimationActive={false}
+                  activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--chart-surface)" }}
+                  dot={(props) => {
+                    const { payload, index } = props
+                    const cx = Number(props.cx ?? 0)
+                    const cy = Number(props.cy ?? 0)
+                    const k = `${store}-${String(payload?.date ?? index)}`
+                    if (index !== model.data.length - 1) return <g key={k} />
+
+                    const color = STORE_VAR[store] ?? "#6b7280"
+                    // Shape differs per store so the latest reading is identifiable
+                    // without relying on hue at all.
+                    return i === 0 ? (
+                      <rect
+                        key={k}
+                        x={cx - 3.5} y={cy - 3.5} width={7} height={7} rx={1.5}
+                        fill={color} stroke="var(--chart-surface)" strokeWidth={2}
+                      />
+                    ) : (
+                      <circle
+                        key={k}
+                        cx={cx} cy={cy} r={4}
+                        fill={color} stroke="var(--chart-surface)" strokeWidth={2}
+                      />
+                    )
+                  }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+
+          {/* Figures in text — the chart never gates a value */}
+          <div className="mt-3 flex flex-col gap-1.5">
+            {live.map(({ store, st }) => (
+              <div key={store} className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-neutral-100">
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 rounded-[2px]"
+                    style={{ backgroundColor: STORE_VAR[store] ?? "#6b7280" }}
+                  />
+                  {STORE_LABEL[store] ?? store}
+                </span>
+                <span className="tabular-nums text-gray-500 dark:text-neutral-400">
+                  <span className="font-semibold text-gray-900 dark:text-neutral-100">{money(st.now)}</span>
+                  {" · low "}{money(st.low)}
+                  {" · usually "}{money(st.avg)}
+                </span>
+              </div>
             ))}
           </div>
-        )}
-      </div>
 
-      <ResponsiveContainer width="100%" height={190}>
-        <LineChart data={model.data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-          <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
-          <XAxis
-            dataKey="date"
-            tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
-            tickLine={false}
-            axisLine={{ stroke: "var(--chart-grid)" }}
-            tickMargin={8}
-            minTickGap={36}
-            tickFormatter={fmtDate}
-          />
-          <YAxis
-            tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
-            tickLine={false}
-            axisLine={false}
-            width={46}
-            domain={model.domain}
-            tickCount={4}
-            tickFormatter={v => `$${Number(v).toFixed(Number(v) % 1 === 0 ? 0 : 2)}`}
-          />
-          <Tooltip
-            cursor={{ stroke: "var(--chart-axis)", strokeWidth: 1 }}
-            formatter={(v, name) => [money(Number(v)), STORE_LABEL[String(name)] ?? String(name)]}
-            labelFormatter={d => new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-            contentStyle={{
-              fontSize: 12,
-              borderRadius: 10,
-              border: "1px solid var(--chart-grid)",
-              background: "var(--chart-surface)",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-              padding: "8px 10px",
-            }}
-          />
-
-          {model.bestEver !== null && (
-            <ReferenceLine
-              y={model.bestEver}
-              stroke="var(--chart-rule)"
-              strokeDasharray="4 3"
-              strokeWidth={1}
-              label={{
-                value: `best ${money(model.bestEver)}`,
-                position: "insideBottomRight",
-                fontSize: 10,
-                fill: "var(--chart-axis)",
-              }}
-            />
-          )}
-
-          {live.map(({ store }, i) => (
-            <Line
-              key={store}
-              type="stepAfter"
-              dataKey={store}
-              name={store}
-              stroke={STORE_VAR[store] ?? "#6b7280"}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              connectNulls
-              isAnimationActive={false}
-              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--chart-surface)" }}
-              dot={(props) => {
-                const { payload, index } = props
-                const cx = Number(props.cx ?? 0)
-                const cy = Number(props.cy ?? 0)
-                const k = `${store}-${String(payload?.date ?? index)}`
-                if (index !== model.data.length - 1) return <g key={k} />
-
-                const color = STORE_VAR[store] ?? "#6b7280"
-                // Shape differs per store so the latest reading is identifiable
-                // without relying on hue at all.
-                return i === 0 ? (
-                  <rect
-                    key={k}
-                    x={cx - 3.5} y={cy - 3.5} width={7} height={7} rx={1.5}
-                    fill={color} stroke="var(--chart-surface)" strokeWidth={2}
-                  />
-                ) : (
-                  <circle
-                    key={k}
-                    cx={cx} cy={cy} r={4}
-                    fill={color} stroke="var(--chart-surface)" strokeWidth={2}
-                  />
-                )
-              }}
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-
-      {/* Figures in text — the chart never gates a value */}
-      <div className="mt-3 flex flex-col gap-1.5">
-        {live.map(({ store, st }) => (
-          <div key={store} className="flex items-baseline justify-between gap-2 text-xs">
-            <span className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-neutral-100">
-              <span
-                aria-hidden
-                className="h-2 w-2 rounded-[2px]"
-                style={{ backgroundColor: STORE_VAR[store] ?? "#6b7280" }}
-              />
-              {STORE_LABEL[store] ?? store}
-            </span>
-            <span className="tabular-nums text-gray-500 dark:text-neutral-400">
-              <span className="font-semibold text-gray-900 dark:text-neutral-100">{money(st.now)}</span>
-              {" · low "}{money(st.low)}
-              {" · usually "}{money(st.avg)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-400 dark:text-neutral-500">
-        Price holds until the next weekly update · dashed line = best price seen at either store
-      </p>
+          <p className="mt-3 text-[11px] leading-relaxed text-gray-400 dark:text-neutral-500">
+            Today&apos;s price is live · earlier points are weekly readings · dashed line = best price seen at either store
+          </p>
+        </>
+      )}
     </div>
   )
 }
