@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 
 type Deal = {
   id: string
@@ -44,8 +45,10 @@ export async function GET(request: NextRequest) {
     },
   })
 
+  // Only genuine discounts become a "currentDeal" — a listing that reached
+  // /on-special without a price cut must fall back to the catalogue price.
   const dealMap = new Map<string, Deal>(
-    currentDeals.map(d => [
+    currentDeals.filter(isRealDeal).map(d => [
       `${d.store}:${d.name}`,
       {
         id: d.id,

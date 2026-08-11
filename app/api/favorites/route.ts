@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 
 export async function GET() {
   const session = await auth()
@@ -52,7 +53,8 @@ export async function GET() {
     }),
   ])
 
-  const dealMap = new Map(currentDeals.map(d => [`${d.store}:${d.name}`, d]))
+  // Same rule as /api/store-products: no price cut, no deal. See lib/deal.ts.
+  const dealMap = new Map(currentDeals.filter(isRealDeal).map(d => [`${d.store}:${d.name}`, d]))
   const recentMap = new Map(recentProducts.map(d => [`${d.store}:${d.name}`, d]))
 
   return NextResponse.json(

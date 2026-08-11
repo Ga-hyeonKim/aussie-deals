@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 import Image from "next/image"
 import { notFound } from "next/navigation"
 import FavoriteButton from "@/components/FavoriteButton"
@@ -13,7 +14,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
   if (!storeProduct) notFound()
 
   const now = new Date()
-  const [currentDeal, recentProduct] = await Promise.all([
+  const [liveProduct, recentProduct] = await Promise.all([
     prisma.product.findFirst({
       where: {
         store: storeProduct.store,
@@ -29,6 +30,8 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
     }),
   ])
 
+  // A live special that isn't actually cheaper is no special at all.
+  const currentDeal = isRealDeal(liveProduct) ? liveProduct : null
   const regularPrice = recentProduct?.originalPrice ?? storeProduct.price
 
   return (
@@ -64,9 +67,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ i
             {currentDeal ? (
               <>
                 <span className="text-3xl font-bold text-gray-900">${currentDeal.salePrice.toFixed(2)}</span>
-                {currentDeal.originalPrice && (
-                  <span className="text-lg text-gray-400 line-through">${currentDeal.originalPrice.toFixed(2)}</span>
-                )}
+                <span className="text-lg text-gray-400 line-through">${currentDeal.originalPrice.toFixed(2)}</span>
                 <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-bold text-green-700">ON SALE</span>
                 {currentDeal.discountPercent && (
                   <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-bold text-green-700">

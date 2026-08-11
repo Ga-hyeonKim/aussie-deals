@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -25,7 +26,7 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ i
 
   const entries = await Promise.all(
     group.products.map(async sp => {
-      const [currentDeal, recentProduct] = await Promise.all([
+      const [liveProduct, recentProduct] = await Promise.all([
         prisma.product.findFirst({
           where: {
             store: sp.store,
@@ -41,6 +42,9 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ i
         }),
       ])
 
+      // A live special that isn't actually cheaper is no special at all —
+      // treat it as absent rather than badging the catalogue price as a sale.
+      const currentDeal = isRealDeal(liveProduct) ? liveProduct : null
       const regularPrice = recentProduct?.originalPrice ?? sp.price
       const effectivePrice = currentDeal?.salePrice ?? regularPrice
 
@@ -106,7 +110,7 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ i
 
                   <div className="flex flex-wrap items-baseline gap-2">
                     <span className="text-2xl font-bold text-gray-900">${effectivePrice.toFixed(2)}</span>
-                    {currentDeal && currentDeal.originalPrice && (
+                    {currentDeal && (
                       <span className="text-sm text-gray-400 line-through">${currentDeal.originalPrice.toFixed(2)}</span>
                     )}
                     {currentDeal && (
