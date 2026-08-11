@@ -71,6 +71,8 @@ interface ParsedProduct {
   originalPrice: number | null;
   discountPercent: number | null;
   imageUrl: string | null;
+  /** Coles' own label for the promo — only used to explain what we skipped. */
+  promoHint: string | null;
 }
 
 // --- Helpers ---
@@ -173,6 +175,7 @@ function parseProduct(p: ColesRawProduct, assetsUrl: string): ParsedProduct | nu
     originalPrice,
     discountPercent,
     imageUrl: p.imageUris?.[0]?.uri ? assetsUrl + p.imageUris[0].uri : null,
+    promoHint: p.pricing.promotionType ?? p.pricing.specialType ?? null,
   };
 }
 
@@ -218,6 +221,28 @@ async function collect(): Promise<ParsedProduct[]> {
 
 // --- DB Save ---
 
+/** Listings that reached /on-special without a real discount — reported at the end. */
+const skipped: ParsedProduct[] = [];
+
+function reportSkipped(total: number): void {
+  if (skipped.length === 0) {
+    console.log("[Coles] 할인 없는 특가 항목: 0개");
+    return;
+  }
+
+  const byHint = new Map<string, number>();
+  for (const p of skipped) byHint.set(p.promoHint ?? "(none)", (byHint.get(p.promoHint ?? "(none)") ?? 0) + 1);
+
+  const pct = ((skipped.length / total) * 100).toFixed(1);
+  console.log(`[Coles] 할인 없는 특가 항목 ${skipped.length}/${total} (${pct}%) — Product 저장 건너뜀`);
+  for (const [hint, n] of [...byHint].sort((a, b) => b[1] - a[1])) {
+    console.log(`[Coles]   promotionType=${hint}: ${n}개`);
+  }
+  for (const p of skipped.slice(0, 5)) {
+    console.log(`[Coles]   e.g. ${p.name} — now $${p.salePrice}, was ${p.originalPrice ?? "null"}`);
+  }
+}
+
 async function upsertBatch(
   products: ParsedProduct[],
   validFrom: Date,
@@ -226,31 +251,42 @@ async function upsertBatch(
   const results = await Promise.all(
     products.map(async p => {
       try {
-        await prisma.product.upsert({
-          where: { store_name_validFrom: { store: "COLES", name: p.name, validFrom } },
-          update: {
-            salePrice: p.salePrice,
-            originalPrice: p.originalPrice,
-            discountPercent: p.discountPercent,
-            brand: p.brand,
-            unit: p.unit,
-            imageUrl: p.imageUrl,
-            validTo,
-          },
-          create: {
-            store: "COLES",
-            name: p.name,
-            brand: p.brand,
-            category: p.category,
-            unit: p.unit,
-            salePrice: p.salePrice,
-            originalPrice: p.originalPrice,
-            discountPercent: p.discountPercent,
-            imageUrl: p.imageUrl,
-            validFrom,
-            validTo,
-          },
-        });
+        // Coles lists plenty of things on /on-special that carry no was-price —
+        // "Low Price", "New", and multi-buys whose saving can't be expressed as
+        // a single unit price. Writing those to Product made them render as
+        // "ON SALE" at full price (30% of live Coles specials, Aug 2026).
+        // The catalogue row below is still worth updating; the special is not.
+        const isRealDiscount = p.originalPrice !== null && p.salePrice < p.originalPrice;
+
+        if (isRealDiscount) {
+          await prisma.product.upsert({
+            where: { store_name_validFrom: { store: "COLES", name: p.name, validFrom } },
+            update: {
+              salePrice: p.salePrice,
+              originalPrice: p.originalPrice,
+              discountPercent: p.discountPercent,
+              brand: p.brand,
+              unit: p.unit,
+              imageUrl: p.imageUrl,
+              validTo,
+            },
+            create: {
+              store: "COLES",
+              name: p.name,
+              brand: p.brand,
+              category: p.category,
+              unit: p.unit,
+              salePrice: p.salePrice,
+              originalPrice: p.originalPrice,
+              discountPercent: p.discountPercent,
+              imageUrl: p.imageUrl,
+              validFrom,
+              validTo,
+            },
+          });
+        } else {
+          skipped.push(p);
+        }
 
         const sp = await prisma.storeProduct.upsert({
           where: { store_name: { store: "COLES", name: p.name } },
@@ -275,7 +311,7 @@ async function upsertBatch(
           select: { id: true },
         });
 
-        return { id: sp.id, price: p.salePrice };
+        return { id: sp.id, price: p.salePrice, isOnSale: isRealDiscount };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`[Coles] ${p.name} 저장 실패:`, msg);
@@ -287,7 +323,7 @@ async function upsertBatch(
   const history = results.filter(Boolean).map(r => ({
     storeProductId: r!.id,
     price: r!.price,
-    isOnSale: true,
+    isOnSale: r!.isOnSale,
   }));
 
   if (history.length > 0) {
@@ -319,6 +355,7 @@ async function saveToDb(products: ParsedProduct[]) {
   }
 
   console.log(`[Coles] DB 저장 완료: ${products.length}개 (총 ${fmt(Date.now() - startTime)})`);
+  reportSkipped(products.length);
 }
 
 // --- Main ---
