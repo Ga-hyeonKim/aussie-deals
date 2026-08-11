@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 import DealsGrid from "@/components/DealsGrid"
 
 export const dynamic = "force-dynamic"
@@ -18,13 +19,17 @@ function formatDateRange(validFrom: Date): string {
 export default async function Home() {
   const now = new Date()
 
-  const products = await prisma.product.findMany({
+  // A live Product row is not proof of a discount — see lib/deal.ts. Drop the
+  // ones with no regular price at the database, then check the actual gap.
+  const rows = await prisma.product.findMany({
     where: {
       validFrom: { lte: now },
       validTo: { gte: now },
+      originalPrice: { not: null },
     },
     orderBy: { discountPercent: { sort: "desc", nulls: "last" } },
   })
+  const products = rows.filter(isRealDeal)
 
   const dateRange = products.length > 0 ? formatDateRange(products[0].validFrom) : null
 

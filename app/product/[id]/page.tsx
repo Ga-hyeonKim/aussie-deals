@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { isRealDeal } from "@/lib/deal"
 import Image from "next/image"
 import { notFound } from "next/navigation"
 import FavoriteButton from "@/components/FavoriteButton"
@@ -18,6 +19,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
   const validTo = new Date(product.validTo)
   const validToStr = validTo.toLocaleDateString("en-AU", { day: "numeric", month: "short" })
+
+  // This row lives in the specials table, but that alone doesn't make it a
+  // discount — Coles listings can arrive with no price cut. See lib/deal.ts.
+  const onSale = isRealDeal(product)
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -50,10 +55,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <span className="text-3xl font-bold text-gray-900">${product.salePrice.toFixed(2)}</span>
-            {product.originalPrice && (
+            {onSale && (
               <span className="text-lg text-gray-400 line-through">${product.originalPrice.toFixed(2)}</span>
             )}
-            {product.discountPercent && (
+            {onSale && product.discountPercent && (
               <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-bold text-green-700">
                 -{product.discountPercent}%
               </span>
@@ -63,7 +68,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <div className="mb-6 space-y-1 text-sm text-gray-500">
             {product.unit && <p>Size: {product.unit}</p>}
             <p>Category: {product.category}</p>
-            <p>On sale until {validToStr}</p>
+            {onSale && <p>On sale until {validToStr}</p>}
           </div>
 
           <div className="flex items-center gap-3">
