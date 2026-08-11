@@ -129,7 +129,110 @@ stale vs fresh 비교가 됨.
 
 ---
 
-## 2026-08-11 · 용량이 다른 상품이 같은 그룹으로 매칭 (진행 중)
+## 2026-08-11 · Neon 512MB 한도 — 그리고 임베딩의 63%가 애초에 무용지물
+
+**증상** — 임베딩 재생성이 첫 배치에서 죽음. 0개 저장.
+```
+could not extend file because project size limit (512 MB) has been exceeded
+```
+
+**좁혀간 과정**
+1. 테이블별 크기 측정:
+   ```
+   price_history    250 MB  (테이블 114 + 인덱스 136)   1,095,792행
+   store_products   154 MB  (테이블 138 + 인덱스  16)      97,571행
+   Product           77 MB                             174,587행
+   총 490 MB / 512 MB
+   ```
+2. `store_products`가 97,571행에 138MB = **행당 1,481바이트**. 이름·가격 몇 개인
+   테이블이 그럴 수 없음 → 뭔가 남아있다고 판단
+3. **첫 가설: 죽은 튜플. 틀렸음.** `n_dead_tup`이 2,811 / 97,571 = 2.9%뿐
+4. 재측정 — `pg_stats`의 `avg_width` 합으로 실제 필요량을 계산:
+   ```
+   bytes/row 실제:  1,481
+   bytes/row 예상:  ~309
+   설명 안 되는 것: 1,172 bytes/row = 109 MB
+   vector(256):     ~1,028 bytes/row
+   attisdropped 컬럼: 2개
+   ```
+   → 죽은 튜플이 아니라 **지워진 컬럼의 바이트가 살아있는 행 안에** 남은 것.
+   Postgres는 `DROP COLUMN` 시 테이블을 재작성하지 않음
+5. 회수 방법 확인 → 일반 `VACUUM`은 불가(죽은 튜플이 아니므로),
+   `VACUUM FULL`은 테이블 크기(138MB)만큼 여유가 필요한데 22MB뿐 → **막힘**
+6. 다른 각도로 전환: "공간을 어떻게 늘리나"가 아니라
+   **"이 임베딩이 다 필요한가"**를 물음. 매칭 쿼리가
+   `w.canonical_brand = c.canonical_brand`로 조인하므로 브랜드가 한쪽 매장에만
+   있으면 매칭이 원리적으로 불가능:
+   ```
+   normalized_name 있는 상품:       98,805
+   브랜드가 양쪽 매장에 다 있는 것:  36,229 (36.7%)
+   저장 공간: 전체 97MB  vs  필요한 것만 36MB
+   ```
+   **62,576개, 61MB가 구조적으로 무용지물이었음**
+7. 인덱스 사용량도 측정 → `price_history_pkey` 52MB, `idx_scan = 0`.
+   조회는 전부 `(storeProductId, recordedAt)` 복합 인덱스(84MB, 6,972회)로 나감
+
+**원인** — 두 겹. 표면은 저장 한도지만, 실제로는 (a) 지워진 컬럼 공간이 회수되지
+않았고 (b) 처음부터 매칭 불가능한 상품까지 임베딩하고 있었음. (b)는 한도와 무관하게
+잘못이었고, 한도 때문에 드러났을 뿐.
+
+**처방 (계획)** — TODO Priority 0.5의 H → G → F
+1. `price_history`의 PK를 `(storeProductId, recordedAt)` 복합키로 변경 (52MB + 27MB)
+2. 임베딩은 양쪽 매장 공통 브랜드 36,229개만 생성 (97MB → 36MB)
+3. 그 다음 용량 게이트로 ProductGroup 전체 재생성
+
+**되돌아보면** — 3번에서 가설이 틀렸을 때 "그럼 회수를 어떻게 하지"로 계속 파는 대신
+"애초에 이만큼 필요한가"로 질문을 바꾼 게 전환점. 공간을 61MB 늘리는 것보다
+61MB를 안 쓰는 게 쉬웠음.
+
+**배운 것** —
+
+---
+
+## 2026-08-11 · 있어야 할 컬럼이 없음 — `db push`가 임베딩을 지우고 있었다
+
+**증상** — 용량 게이트를 검증하려고 매칭 스크립트를 돌렸더니:
+```
+Raw query failed. Code: 42703. Message: column w.embedding does not exist
+```
+그런데 이 스크립트는 전날 정상 동작해서 ProductGroup 3,362개를 만들었음.
+
+**좁혀간 과정**
+1. 컬럼 목록 조회 → `embedding` 없음. 단 `vector` 확장은 살아있고
+   ProductGroup 3,362개도 그대로 → **누가 컬럼만 지웠다**
+2. SESSION_NOTES(08-05)에 단서가 있었음:
+   *"embedding/pgvector 컬럼은 Prisma가 vector 타입 미지원이라 Neon SQL Editor에서 직접 추가"*
+   → 즉 `schema.prisma`에 없는 컬럼
+3. 워크플로 확인 → 4개 전부 `npx prisma db push --accept-data-loss` 실행
+4. `prisma migrate diff` → `-- This is an empty migration.`
+   즉 DB가 현재 스키마와 완전히 일치. 다른 수동 컬럼은 없음(추가 위험 없음)
+5. 시점 추정: 매칭이 08-10 13:06에 성공했고 카탈로그 크론은 격주 월요일 = 08-10.
+   그 뒤에 워크플로가 돌면서 날아감
+
+**원인** — `db push`는 `schema.prisma`를 유일한 진실로 취급한다. 스키마에 없는 컬럼은
+정의상 "지워야 할 드리프트"이고, `--accept-data-loss`가 허가를 준다.
+임베딩 98,595개 소실.
+
+그리고 그 플래그의 출처가 `e6fcde1` (2026-04-17)
+— *"Allow data loss in db push to drop unused playing_with_neon table"*.
+**4월에 쓰레기 테이블 하나 지우려고 넣은 플래그**가 8월에 이것을 지웠다.
+
+**처방** — `schema.prisma`에 `embedding Unsupported("vector(256)")?` 선언 →
+`migrate diff`가 `ALTER TABLE ... ADD COLUMN "embedding" vector(256)`를 생성하는 것을
+확인한 뒤 `db push`로 컬럼 재생성 (`cca4457`)
+
+**재발 방지** — CLAUDE.md의 Invariants에 기록:
+> **스키마 파일 밖에서 만든 것은, 스키마 파일을 소유한 도구가 지운다.**
+
+그리고 더 일반적으로: **도구가 옳은 관행을 불가능하게 만드는 것처럼 보이면,
+관행을 포기하기 전에 탈출구를 찾아라.** Prisma가 `vector`를 모른다는 사실이
+"스키마 우선" 원칙의 예외를 만들어주지 않았다. `Unsupported()`는 처음부터 있었다.
+
+**배운 것** —
+
+---
+
+## 2026-08-11 · 용량이 다른 상품이 같은 그룹으로 매칭
 
 **증상** — Cetaphil Daily Advance Lotion 크로스스토어 페이지에서 울리스 473mL $27와
 콜스 226g $20을 나란히 비교. 이름은 동일하지만 다른 제품.
@@ -155,10 +258,16 @@ stale vs fresh 비교가 됨.
 존재하는데** 유사도 순 greedy 배정이 엉뚱하게 짝지음. 용량 게이트는 틀린 매칭을 없앨
 뿐 아니라 **맞는 매칭을 만들어냄.**
 
-**처방 (계획)**
-1. `lib/unit.ts` — `parseSize()` / `sameSize()`
-2. `match-products.ts`에 게이트: 용량이 다르면 거부, 파싱 불가면 통과
-3. 기존 546개 해체 후 재매칭
+**처방** — `lib/unit.ts`의 `parseSize()` / `sameSize()`와 `match-products.ts`의
+게이트 (`cca4457`). 용량이 다르면 거부, 용량 주장이 없으면 판단 보류.
+파서 자체 테스트 15/15 통과.
+
+팩 구조를 유지한 게 설계 포인트: 총량으로 환산하면 `375mL x 10 pack`이 `3.75L`과
+같아지고 `2x100g`가 `200g`과 같아진다. 10캔 묶음은 큰 병이 아니고 트윈팩은 한 통이
+아니므로, 환산하면 새로운 오매칭을 만든다.
+
+**아직 실행 안 됨** — 기존 그룹 재생성이 남았고, 그건 임베딩이 필요하고,
+임베딩은 Neon 저장 한도에 막혀 있음 (위 항목). TODO Priority 0.5의 F.
 
 **배운 것** —
 

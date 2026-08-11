@@ -1,5 +1,47 @@
 # Architecture Decisions — AussieDeals
 
+## pgvector 컬럼은 `Unsupported()`로 스키마에 선언 (수동 DDL만으로는 부족)
+- `embedding vector(256)`을 Neon SQL Editor에서만 만들고 `schema.prisma`에는 두지 않았더니,
+  워크플로의 `prisma db push --accept-data-loss`가 드리프트로 판단해 컬럼을 DROP (임베딩 98,595개 소실)
+- `Unsupported("vector(256)")?`로 선언하면 Prisma가 컬럼을 생성·보존하고, Prisma Client는
+  읽지 못하므로 embed/match 스크립트는 계속 raw SQL을 씀
+- **Why:** `db push`는 `schema.prisma`를 유일한 진실로 취급한다. 스키마 파일 밖에서 만든 것은
+  정의상 "지워야 할 드리프트"다. Prisma가 타입을 모른다는 사실이 스키마 우선 원칙의 예외를
+  만들어주지 않는다 — 탈출구(`Unsupported`)가 있다.
+
+## 세일 판정을 단일 함수로 (`lib/deal.ts`의 `isRealDeal`)
+- 6곳이 각자 "`currentDeal`이 존재하면 세일"로 판단하고 있었음. 콜스 특가의 30%가 할인 0원이라
+  전부 틀린 판단이었음
+- 센트 정수로 비교 (`Math.round(n*100)`) — 부동소수점에서 `5.00 - 4.99 = 0.00999...`가 되어
+  `>= 0.01` 비교는 진짜 1센트 할인을 탈락시킴
+- 타입 서술어(`deal is T & { originalPrice: number }`)로 선언해서 호출부에서 `!` 없이 좁혀짐
+- **Why:** 이름 없는 가정은 복사된다. 6곳으로 퍼진 판단을 한 곳에 모으면 고칠 곳도 한 곳이 된다.
+  센트 단위 비교는 UI가 소수점 2자리로 반올림해 보여주는 값과 판단 기준을 일치시킨다.
+
+## 차트는 현재가를 유추하지 않고 페이지에서 받는다
+- `CrossStorePriceChart`가 PriceHistory의 마지막 행을 "지금 가격"으로 쓰고 있었음.
+  두 매장의 시계열이 끝나는 날짜가 다른 경우가 97.3%라 stale vs fresh 비교가 됨
+- 페이지가 카드 렌더에 이미 계산하는 `effectivePrice`를 prop으로 주입하고, 차트는 오늘 점을
+  그 값으로 고정
+- **Why:** 같은 숫자를 두 곳에서 각자 유도하면 언젠가 갈라진다. 한쪽이 계산하고 다른 쪽이
+  받아쓰게 하면 불일치가 구조적으로 불가능해진다. PriceHistory는 구멍 난 아카이브이므로
+  "과거의 모양"으로만 쓴다.
+
+## 크로스스토어 매칭에 용량 하드 게이트 (`lib/unit.ts`)
+- 브랜드는 하드 게이트였는데 용량은 게이트가 없었고, `normalizedName`이 용량을 지우므로
+  임베딩이 226g와 473mL을 구별할 방법이 없었음 → 그룹의 18.2%가 다른 상품을 비교
+- 팩 구조를 유지: `375mL x 10 pack ≠ 3.75L`, `2x100g ≠ 200g`
+- 용량 주장이 없으면(`1EA`, `each`, 빈 값) 거부가 아니라 **판단 보류**
+- **Why:** 총량으로 환산하면 10캔 묶음과 큰 병이 같아진다. 그리고 한쪽 매장이 용량을 적지
+  않은 것은 불일치의 증거가 아니므로, 거부하면 얻는 것 없이 진짜 매칭만 잃는다.
+
+## 임베딩은 양쪽 매장 공통 브랜드에만 생성
+- 매칭 쿼리가 `w.canonical_brand = c.canonical_brand`로 조인하므로, 브랜드가 한쪽 매장에만
+  있는 상품의 임베딩은 어떤 경우에도 매칭을 만들 수 없음
+- 98,805개 중 36,229개(36.7%)만 해당 → 97MB 대신 36MB
+- **Why:** 매칭 불가능한 상품의 임베딩은 저장 공간을 쓰는 것 외에 아무 일도 하지 않는다.
+  Neon 무료 한도 512MB에서 61MB는 큰 비중이다.
+
 ## Two-table design: Product + StoreProduct
 - `Product`: weekly specials — has `validFrom`, `validTo`, `salePrice`, `discountPercent`
 - `StoreProduct`: permanent catalog — current price, no date scope
