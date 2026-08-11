@@ -6,6 +6,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **AussieDeals** — Weekly grocery deals aggregator for Woolworths & Coles (AU). Learning project: bootcamp grad + ECU CS Year 1. Prefer industry-standard tools, explain the *why* behind decisions.
 
+## Invariants
+
+Things that must always hold. Every one of these was learned by shipping the
+opposite. **Re-read this list when adding a store, a data source, or a new
+dimension** — that is when assumptions from a narrower world quietly expire.
+
+- **A `Product` row does not mean the item is discounted.** Coles lists
+  no-discount items on `/on-special`. Use `isRealDeal()` from `lib/deal.ts`;
+  never test `if (deal)` alone.
+- **`PriceHistory` is an incomplete archive, not a price feed.** Rows are
+  missing, duplicated per day, and each store's series ends on a different day.
+  Never read the current price from its last row — the page resolves the
+  current price and passes it down.
+- **Same name does not mean same product.** Size must match too;
+  `normalizedName` strips it, so the embedding cannot see it.
+- **Coles `MULTI_SAVE` promotions have `originalPrice = null`.** Any code
+  reading `originalPrice` must handle null as "no discount known", not "free".
+
+## Working agreements
+
+- **Name assumptions as functions.** `if (currentDeal)` meaning "on sale" is a
+  claim with no name, and unnamed claims get copy-pasted. A named predicate is
+  one place to correct.
+- **Measure before fixing.** Count how many rows are affected and compare
+  across stores — an asymmetry (Woolworths 0%, Coles 30%) localises the bug
+  faster than reading code does.
+- **Run `npm run build` before pushing anything touching `useSearchParams`,
+  URL params, or server/client boundaries.** `npm run dev` cannot catch
+  prerender errors; it always has a real URL.
+- **Log the diagnosis in `DEBUGGING.md` as it happens** — while the numbers are
+  still to hand, not at wrap-up. Only cases whose scope was actually measured.
+  Leave the `**배운 것**` line empty; it belongs to the author.
+
 ## Tech Stack
 
 | Layer | Choice |
