@@ -146,7 +146,15 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ i
         <div className="mt-4 space-y-3">
           <div className="rounded-2xl border border-gray-200 bg-white p-5">
             <p className="mb-3 text-sm font-semibold text-gray-700">Price History — both stores</p>
-            <CrossStorePriceChart stores={entries.map(e => ({ storeProductId: e.sp.id, store: e.sp.store }))} />
+            <CrossStorePriceChart
+              stores={entries.map(e => ({
+                storeProductId: e.sp.id,
+                store: e.sp.store,
+                // Same number the card above prints — the verdict and the card
+                // cannot disagree if they are literally the same value.
+                currentPrice: e.effectivePrice,
+              }))}
+            />
           </div>
 
           <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-5">
