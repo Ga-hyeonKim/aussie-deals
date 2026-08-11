@@ -3,6 +3,20 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Chart tokens — consumed directly by Recharts via var().
+     The two store lines are overlaid, so the pair has to survive colour
+     blindness. Brand green #16a34a vs brand red #dc2626 measures ΔE 5.0 under
+     deuteranopia — one line, effectively. This pair keeps the brand read but
+     separates on lightness (which CVD preserves): ΔE 17.0 protan, 36.0 normal.
+     Coral sits at 2.68:1 on white, so the legend and the per-store figures
+     below the chart carry the values in text — never colour alone. */
+  --chart-woolworths: #166534;
+  --chart-coles: #f8776a;
+  --chart-grid: #f0efec;
+  --chart-axis: #9b9a95;
+  --chart-surface: #ffffff;
+  --chart-rule: #a3a29d;
 }
 
 @theme inline {
@@ -16,6 +30,15 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    /* TODO: re-validate when dark mode ships — the dark lightness band
+       (L 0.48–0.67) is narrow enough that green vs coral needs re-stepping. */
+    --chart-woolworths: #16a34a;
+    --chart-coles: #f18d84;
+    --chart-grid: #262626;
+    --chart-axis: #737373;
+    --chart-surface: #171717;
+    --chart-rule: #6b6b6b;
   }
 }
 

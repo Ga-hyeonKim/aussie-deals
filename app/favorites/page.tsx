@@ -10,7 +10,21 @@ import FavoriteButton from "@/components/FavoriteButton"
 import type { StoreProductModel } from "@/app/generated/prisma/models"
 import type { ProductModel } from "@/app/generated/prisma/models"
 
-type SearchResult = StoreProductModel & { otherStore?: StoreProductModel }
+type SearchDeal = {
+  id: string
+  salePrice: number
+  originalPrice: number | null
+  discountPercent: number | null
+  validTo: string
+}
+
+type SearchProduct = StoreProductModel & { currentDeal: SearchDeal | null }
+type SearchResult = SearchProduct & { otherStore?: SearchProduct }
+
+/** What the shopper actually pays right now. */
+function effectivePrice(p: SearchProduct) {
+  return p.currentDeal?.salePrice ?? p.price
+}
 
 function StoreBadge({ store }: { store: string }) {
   const isWool = store === "WOOLWORTHS"
@@ -21,14 +35,28 @@ function StoreBadge({ store }: { store: string }) {
   )
 }
 
-function PriceRow({ store, price }: { store: string; price: number }) {
-  const isWool = store === "WOOLWORTHS"
+function PriceRow({ product, cheaper }: { product: SearchProduct; cheaper?: boolean }) {
+  const isWool = product.store === "WOOLWORTHS"
+  const deal = product.currentDeal
+  const price = effectivePrice(product)
+  const was = deal?.originalPrice ?? (deal ? product.price : null)
+
   return (
-    <div className="flex items-center gap-1.5">
-      <span className={`w-11 rounded px-1 py-0.5 text-center text-[9px] font-bold leading-none ${isWool ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      <span className={`w-11 shrink-0 rounded px-1 py-0.5 text-center text-[9px] font-bold leading-none ${isWool ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>
         {isWool ? "WOOL" : "COLES"}
       </span>
-      <span className="text-sm font-bold text-gray-900">${price.toFixed(2)}</span>
+      <span className={`text-sm font-bold ${cheaper ? "text-gray-900" : "text-gray-600"}`}>
+        ${price.toFixed(2)}
+      </span>
+      {was !== null && was > price && (
+        <span className="text-[10px] text-gray-400 line-through">${was.toFixed(2)}</span>
+      )}
+      {deal && (
+        <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold leading-none text-green-700">
+          {deal.discountPercent ? `-${deal.discountPercent}%` : "SALE"}
+        </span>
+      )}
     </div>
   )
 }
@@ -155,7 +183,13 @@ export default function FavoritesPage() {
                       key={product.id}
                       className={`relative flex flex-col gap-2 rounded-2xl border p-3 shadow-sm transition-colors ${watching ? "border-green-400 bg-green-50" : "border-gray-200 bg-white"}`}
                     >
-                      <Link href={`/store-product/${product.id}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={product.name} />
+                      <Link
+                        href={product.otherStore && product.productGroupId
+                          ? `/product-group/${product.productGroupId}`
+                          : `/store-product/${product.id}`}
+                        className="absolute inset-0 z-0 rounded-2xl"
+                        aria-label={product.name}
+                      />
                       {watching && (
                         <span className="self-start rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">WATCHING</span>
                       )}
@@ -171,14 +205,34 @@ export default function FavoritesPage() {
                             <p className="truncate text-xs text-gray-500">{product.brand}</p>
                           )}
                           {product.otherStore ? (
-                            <div className="mt-1.5 flex flex-col gap-1">
-                              <PriceRow store={product.store} price={product.price} />
-                              <PriceRow store={product.otherStore.store} price={product.otherStore.price} />
-                            </div>
+                            (() => {
+                              const mine = effectivePrice(product)
+                              const theirs = effectivePrice(product.otherStore)
+                              return (
+                                <div className="mt-1.5 flex flex-col gap-1">
+                                  <PriceRow product={product} cheaper={mine <= theirs} />
+                                  <PriceRow product={product.otherStore} cheaper={theirs <= mine} />
+                                </div>
+                              )
+                            })()
                           ) : (
                             <>
                               <StoreBadge store={product.store} />
-                              <p className="mt-1 text-sm font-bold text-gray-900">${product.price.toFixed(2)}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                <span className="text-sm font-bold text-gray-900">
+                                  ${effectivePrice(product).toFixed(2)}
+                                </span>
+                                {product.currentDeal && (product.currentDeal.originalPrice ?? product.price) > product.currentDeal.salePrice && (
+                                  <span className="text-[10px] text-gray-400 line-through">
+                                    ${(product.currentDeal.originalPrice ?? product.price).toFixed(2)}
+                                  </span>
+                                )}
+                                {product.currentDeal && (
+                                  <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold leading-none text-green-700">
+                                    {product.currentDeal.discountPercent ? `-${product.currentDeal.discountPercent}%` : "SALE"}
+                                  </span>
+                                )}
+                              </div>
                             </>
                           )}
                         </div>
@@ -223,7 +277,15 @@ export default function FavoritesPage() {
                     })
                   } : undefined}
                 >
-                  {!selectMode && <Link href={`/store-product/${fav.storeProductId}`} className="absolute inset-0 z-0 rounded-2xl" aria-label={fav.storeProduct.name} />}
+                  {!selectMode && (
+                    <Link
+                      href={fav.crossStore && fav.storeProduct.productGroupId
+                        ? `/product-group/${fav.storeProduct.productGroupId}`
+                        : `/store-product/${fav.storeProductId}`}
+                      className="absolute inset-0 z-0 rounded-2xl"
+                      aria-label={fav.storeProduct.name}
+                    />
+                  )}
                   {selectMode && (
                     <div className={`absolute top-3 left-3 z-10 flex h-5 w-5 items-center justify-center rounded-md border-2 transition-colors ${selected.has(fav.storeProductId) ? "border-green-600 bg-green-600" : "border-gray-300 bg-white"}`}>
                       {selected.has(fav.storeProductId) && (

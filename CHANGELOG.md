@@ -3,9 +3,18 @@
 Format: significant user-facing or architecture changes only.
 
 ## [In progress]
-- Favorites cross-store 통합 검색 (normalizedName 기반, 스토어 무관)
+- ProductGroup 단위 찜 (어디서 하트를 눌러도 양쪽 매장 반영)
 - 세일 감지 파이프라인 (찜 목록 배지 + 푸시 알림)
 - "Real deal" badge
+- 다크모드 (앱 전체)
+
+## 2026-08-10
+- 크로스스토어 통합 상세 페이지 `/product-group/[id]` — 양쪽 매장 가격, CHEAPEST 뱃지, 절약액
+- 크로스스토어 가격 그래프 — "지금 어디가 싼지" 판정 + 겹친 비교 + 역대 최저가 기준선
+- 찜 목록 검색: 크로스스토어 상품을 한 카드로 묶고 양쪽 가격 표시
+- 찜 목록 검색: 세일 중인 상품이 정가로 표시되던 버그 수정 (세일가 + 할인율 표시)
+- Deals/찜 목록: 뒤로 가기 시 매장 탭·페이지·필터·검색어 복원 (URL 파라미터)
+- 검색 중 이전 검색어 결과가 잠깐 끼어드는 문제 수정
 
 ## 2026-08-09
 - AI embedding 크로스스토어 매칭 가동: 256차원 임베딩 98,595개 + ProductGroup 2,438개 생성
