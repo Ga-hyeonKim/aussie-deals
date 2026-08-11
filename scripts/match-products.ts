@@ -6,6 +6,7 @@ import ws from "ws";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
+import { sameSize } from "../lib/unit";
 
 neonConfig.webSocketConstructor = ws;
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
@@ -16,8 +17,10 @@ const SIMILARITY_THRESHOLD = 0.92;
 interface MatchCandidate {
   woolworths_id: string;
   woolworths_name: string;
+  woolworths_unit: string | null;
   coles_id: string;
   coles_name: string;
+  coles_unit: string | null;
   similarity: number;
 }
 
@@ -34,8 +37,10 @@ async function findMatches(): Promise<MatchCandidate[]> {
     SELECT
       w.id AS woolworths_id,
       w.name AS woolworths_name,
+      w.unit AS woolworths_unit,
       c.id AS coles_id,
       c.name AS coles_name,
+      c.unit AS coles_unit,
       1 - (w.embedding <=> c.embedding) AS similarity
     FROM store_products w
     JOIN store_products c
@@ -50,6 +55,27 @@ async function findMatches(): Promise<MatchCandidate[]> {
     ORDER BY similarity DESC
   `;
   return rows;
+}
+
+/**
+ * Reject pairs whose pack sizes disagree.
+ *
+ * Brand is already a hard gate in the SQL join; size was not, and nothing else
+ * could supply it — `normalizedName` strips the size, so a 226g tub and a
+ * 473mL bottle embed identically. That left 18% of cross-store groups
+ * comparing different products (170g yoghurt against 1kg, Aug 2026).
+ *
+ * Sizes that make no claim ("1EA", "each", empty) abstain rather than reject:
+ * one store simply not publishing a size is not evidence of a mismatch.
+ */
+function gateBySize(matches: MatchCandidate[]): { kept: MatchCandidate[]; rejected: MatchCandidate[] } {
+  const kept: MatchCandidate[] = [];
+  const rejected: MatchCandidate[] = [];
+  for (const m of matches) {
+    if (sameSize(m.woolworths_unit, m.coles_unit) === false) rejected.push(m);
+    else kept.push(m);
+  }
+  return { kept, rejected };
 }
 
 function dedupeMatches(matches: MatchCandidate[]): MatchCandidate[] {
@@ -111,8 +137,18 @@ async function main() {
   console.log("[Match] 매칭 후보 검색 중...");
   const startTime = Date.now();
 
-  const matches = await findMatches();
-  console.log(`[Match] ${matches.length}개 후보 발견 (${fmt(Date.now() - startTime)})`);
+  const raw = await findMatches();
+  console.log(`[Match] ${raw.length}개 후보 발견 (${fmt(Date.now() - startTime)})`);
+
+  const { kept: matches, rejected } = gateBySize(raw);
+  if (rejected.length > 0) {
+    const pct = ((rejected.length / raw.length) * 100).toFixed(1);
+    console.log(`[Match] 용량 불일치로 ${rejected.length}개 거부 (${pct}%)`);
+    for (const m of rejected.slice(0, 8)) {
+      console.log(`  ${String(m.woolworths_unit).padEnd(9)} ${m.woolworths_name}`);
+      console.log(`  ${String(m.coles_unit).padEnd(9)} ${m.coles_name}`);
+    }
+  }
 
   if (matches.length === 0) {
     console.log("[Match] 새로운 매칭 없음. 종료.");
