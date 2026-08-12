@@ -89,6 +89,12 @@ export default function FavoritesClient() {
   const query = searchParams.get("q") ?? ""
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  // "empty" and "couldn't load" have to be different states, or a 500 reads as
+  // "your favourites are gone".
+  const [failed, setFailed] = useState(false)
+  const [searchFailed, setSearchFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [deleteFailed, setDeleteFailed] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const watchlistRef = useRef<HTMLHeadingElement>(null)
@@ -108,11 +114,18 @@ export default function FavoritesClient() {
       return
     }
 
+    setLoading(true)
+    setFailed(false)
+
     fetch("/api/favorites")
-      .then(res => (res.ok ? res.json() : []))
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then(setFavList)
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false))
-  }, [session?.user?.id, favorites])
+  }, [session?.user?.id, favorites, attempt])
 
   useEffect(() => {
     if (!query.trim() || query.length < 2) {
@@ -123,10 +136,18 @@ export default function FavoritesClient() {
     const controller = new AbortController()
     const timer = setTimeout(() => {
       setSearching(true)
+      setSearchFailed(false)
       fetch(`/api/store-products?q=${encodeURIComponent(query)}&grouped=1`, { signal: controller.signal })
-        .then(res => (res.ok ? res.json() : []))
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
         .then(setSearchResults)
-        .catch(() => {})
+        .catch(e => {
+          // Typing another character aborts the in-flight request. That is
+          // normal; only a real failure should surface.
+          if (e.name !== "AbortError") setSearchFailed(true)
+        })
         .finally(() => setSearching(false))
     }, 300)
 
@@ -140,6 +161,11 @@ export default function FavoritesClient() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Favorites</h1>
             <p className="mt-1 text-gray-500">Save products you want — we&apos;ll show you when they go on sale.</p>
+            {deleteFailed && (
+              <p className="mt-2 text-sm text-red-600" role="status">
+                Couldn&apos;t delete — nothing was removed. Please try again.
+              </p>
+            )}
           </div>
           {favList.length > 0 && (
             <button
@@ -174,6 +200,10 @@ export default function FavoritesClient() {
           <div className="mb-8">
             {searching ? (
               <p className="text-sm text-gray-400">Searching...</p>
+            ) : searchFailed ? (
+              <p className="text-sm text-gray-500">
+                Search is unavailable right now — type another character to retry.
+              </p>
             ) : searchResults.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {searchResults.map(product => {
@@ -258,6 +288,18 @@ export default function FavoritesClient() {
           </p>
         ) : loading ? (
           <p className="text-gray-400">Loading...</p>
+        ) : failed ? (
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-gray-500">
+              Couldn&apos;t load your favourites — this is a connection problem, they&apos;re still saved.
+            </p>
+            <button
+              onClick={() => setAttempt(a => a + 1)}
+              className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white"
+            >
+              Try again
+            </button>
+          </div>
         ) : favList.length === 0 ? (
           <p className="text-gray-400">No favorites yet — search above and tap ❤️ to start watching.</p>
         ) : (
@@ -388,14 +430,24 @@ export default function FavoritesClient() {
                 onClick={async () => {
                   const ids = [...selected]
                   if (ids.length === 0) return
+                  // Optimistic: hide them now, but keep a copy to restore if
+                  // the server never actually deleted anything.
+                  const snapshot = favList
                   setFavList(prev => prev.filter(f => !selected.has(f.storeProductId)))
                   setSelected(new Set())
                   setSelectMode(false)
-                  await fetch("/api/favorites", {
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ storeProductIds: ids }),
-                  })
+                  setDeleteFailed(false)
+                  try {
+                    const res = await fetch("/api/favorites", {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ storeProductIds: ids }),
+                    })
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                  } catch {
+                    setFavList(snapshot)
+                    setDeleteFailed(true)
+                  }
                 }}
                 disabled={selected.size === 0}
                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 transition-opacity"
@@ -405,14 +457,22 @@ export default function FavoritesClient() {
               <button
                 onClick={async () => {
                   if (!confirm("Clear all favorites?")) return
+                  const snapshot = favList
                   setFavList([])
                   setSelected(new Set())
                   setSelectMode(false)
-                  await fetch("/api/favorites", {
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ all: true }),
-                  })
+                  setDeleteFailed(false)
+                  try {
+                    const res = await fetch("/api/favorites", {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ all: true }),
+                    })
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                  } catch {
+                    setFavList(snapshot)
+                    setDeleteFailed(true)
+                  }
                 }}
                 className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white"
               >

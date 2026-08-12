@@ -173,7 +173,12 @@ export async function DELETE(request: NextRequest) {
 
   await prisma.favorite.delete({
     where: { userId_storeProductId: { userId: session.user.id, storeProductId } },
-  }).catch(() => {})
+  }).catch((e: { code?: string }) => {
+    // P2025 = already gone, which is the requested end state. Anything else is
+    // a real failure and must not be answered with ok:true — the client rolls
+    // its optimistic update back on a non-2xx.
+    if (e.code !== "P2025") throw e
+  })
 
   return NextResponse.json({ ok: true })
 }

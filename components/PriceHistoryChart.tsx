@@ -17,15 +17,36 @@ type Props = {
 export default function PriceHistoryChart({ storeProductId, currentPrice }: Props) {
   const [history, setHistory] = useState<PricePoint[]>([])
   const [loading, setLoading] = useState(true)
+  // A failed request must not look like "this product has no history".
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
+    setFailed(false)
     fetch(`/api/price-history/${storeProductId}`)
-      .then(r => r.ok ? r.json() : [])
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(setHistory)
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false))
-  }, [storeProductId])
+  }, [storeProductId, attempt])
 
   if (loading) return <div className="h-32 animate-pulse rounded-xl bg-gray-100" />
+
+  if (failed) return (
+    <div className="flex flex-col items-start gap-2">
+      <p className="text-xs text-gray-500">Couldn&apos;t load price history.</p>
+      <button
+        onClick={() => setAttempt(a => a + 1)}
+        className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white"
+      >
+        Retry
+      </button>
+    </div>
+  )
 
   if (history.length === 0) return (
     <p className="text-xs text-gray-400">No price history yet — check back after the next weekly update.</p>
