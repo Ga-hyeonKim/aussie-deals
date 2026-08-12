@@ -12,6 +12,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
 import { normalizeName } from "../lib/normalize";
+import { createScrapeReport, type ScrapeReport } from "../lib/scrape-report";
 
 chromium.use(StealthPlugin());
 
@@ -131,7 +132,7 @@ async function fetchCategoryAll(
   return products;
 }
 
-async function upsertBatch(products: ParsedProduct[]): Promise<void> {
+async function upsertBatch(products: ParsedProduct[], report: ScrapeReport): Promise<void> {
   const results: ({ id: string; price: number } | null)[] = [];
 
   // Process in small concurrent chunks to avoid overwhelming Neon connection pool
@@ -144,7 +145,8 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
           update: { brand: p.brand, canonicalBrand: canonicalizeBrand(p.brand), normalizedName: normalizeName(p.name, p.brand), category: p.category, unit: p.unit, imageUrl: p.imageUrl },
           create: { store: "WOOLWORTHS", name: p.name, brand: p.brand, canonicalBrand: canonicalizeBrand(p.brand), normalizedName: normalizeName(p.name, p.brand), category: p.category, unit: p.unit, price: p.price, imageUrl: p.imageUrl },
           select: { id: true },
-        }).catch((e: Error) => { console.error(`[Woolworths All] ${p.name} 저장 실패:`, e.message); return null; });
+        }).catch((e: Error) => { report.fail("storeProduct", e); return null; });
+        if (sp) report.ok("storeProduct");
         return sp ? { id: sp.id, price: p.price } : null;
       })
     );
@@ -159,7 +161,10 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
 
   if (history.length > 0) {
     // skipDuplicates: see fetch-coles-all.ts — one batch, one timestamp.
-    await prisma.priceHistory.createMany({ data: history, skipDuplicates: true }).catch((e: Error) => console.error(`[Woolworths All] PriceHistory createMany 실패:`, e.message));
+    await prisma.priceHistory
+      .createMany({ data: history, skipDuplicates: true })
+      .then(r => report.ok("priceHistory", r.count))
+      .catch((e: Error) => report.fail("priceHistory", e, history.length));
   }
 }
 
@@ -169,7 +174,7 @@ function fmt(ms: number): string {
   return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-async function saveToDb(products: ParsedProduct[]) {
+async function saveToDb(products: ParsedProduct[], report: ScrapeReport) {
   console.log(`[Woolworths All] DB 저장 시작: ${products.length}개...`);
 
   // warm-up query to wake Neon from sleep
@@ -180,7 +185,7 @@ async function saveToDb(products: ParsedProduct[]) {
   let saved = 0;
   for (let i = 0; i < products.length; i += BATCH_SIZE) {
     const batch = products.slice(i, i + BATCH_SIZE);
-    await upsertBatch(batch);
+    await upsertBatch(batch, report);
     saved += batch.length;
     const elapsed = Date.now() - startTime;
     const rate = saved / (elapsed / 1000);
@@ -189,7 +194,8 @@ async function saveToDb(products: ParsedProduct[]) {
   }
 
   const total = Date.now() - startTime;
-  console.log(`[Woolworths All] DB 저장 완료: ${products.length}개 (총 ${fmt(total)})`);
+  // Attempted, not saved — the real counts come from report.finish().
+  console.log(`[Woolworths All] DB 저장 시도 완료: ${products.length}개 (총 ${fmt(total)})`);
 }
 
 function deduplicate(products: ParsedProduct[]): ParsedProduct[] {
@@ -256,7 +262,9 @@ async function main() {
     console.log(`[Woolworths All] dump 파일 저장 완료: ${DUMP_PATH}`);
   }
 
-  await saveToDb(unique);
+  const report = createScrapeReport("Woolworths All");
+  await saveToDb(unique, report);
+  report.finish();
   await prisma.$disconnect();
 }
 

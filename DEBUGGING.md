@@ -277,6 +277,74 @@ price_history    250MB → 176MB   (인덱스 136 → 62MB)
 
 ---
 
+## 2026-08-12 · 크론은 초록불, `price_history`는 한 주가 통째로 비어 있었다
+
+**증상** — 없음. 위 작업을 커밋하기 전에 "다음 크론이 이걸 되돌리나" 확인하려고
+Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이었다.
+
+**좁혀간 과정**
+1. 08-12 새벽 크론이 `success`인데 `price_history`의 마지막 날짜가 08-10:
+   ```
+   Product         08-11 배치 정상 (Coles 5,259 / Woolworths 2,941)
+   store_products  08-11 갱신 정상 (98,815행)
+   price_history   08-10이 마지막   ← 08-11 주가 없음
+   ```
+2. 로그에서 `PriceHistory createMany 실패`가 **143번** 반복. 원인은 전부 하나:
+   `The column 'id' does not exist in the current database.`
+3. 그 위를 보니 `db push`가 3번 다 실패해 있었음:
+   ```
+   The required column `id` was added to the `price_history` table with a
+   prisma-level default value. There are 1095792 rows in this table, it is
+   not possible to execute this step.
+   ```
+4. 그런데도 다음 스텝이 실행됨. 워크플로를 보니:
+   ```bash
+   for i in 1 2 3; do
+     npx prisma db push --accept-data-loss && break
+     echo "Attempt $i failed, waiting 10s..."
+     sleep 10          # ← 3번 다 실패하면 마지막 명령이 sleep = exit 0
+   done
+   ```
+   **4개 워크플로 전부** 같은 모양
+5. 스크립트도 종료 코드를 안 냄 — `.catch(e => console.error(...))`가 **14곳**
+6. 마지막 한 겹: 완료 로그가 `products.length`(시도한 수)를 출력.
+   `saved += batch.length`는 진행률 표시용이라 실패와 무관.
+   **실제 성공 건수를 세는 스크래퍼는 4개 중 `fetch-woolworths.ts` 하나뿐**
+   → 그래서 로그에 `DB 저장 완료: 7,134개`가 찍히고 실제 저장은 0건
+7. 왜 아무 검증도 이걸 못 잡았나 확인:
+   ```
+   tsconfig.json  exclude: ["node_modules", "scripts"]   ← 타입체크 제외
+   package.json   typecheck / test 스크립트 없음
+   workflows      lint / typecheck / build 스텝 없음
+   ```
+   프로덕션 DB에 쓰는 코드의 유일한 검증이 "크론이 실제로 도는 것"인데,
+   1~6 때문에 그 결과가 안 보임
+
+**원인** — 단일 버그가 아니라 **세 겹이 전부 실패를 통과시킴**: 워크플로가 실패를
+삼키고(exit 0), 스크립트가 실패를 삼키고(`.catch`), 로그가 시도 수를 성공으로
+보고함. 어느 한 겹만 있었어도 잡혔다.
+
+**처방** — (`890c569` 다음 커밋)
+1. 워크플로 4개: `&& break` → `if ...; then exit 0; fi` + 마지막에 `exit 1`.
+   스키마가 안 맞으면 **쓰지 않는다**
+2. `lib/scrape-report.ts` — 종류별 시도/성공/실패를 세고, 판정 두 가지로 종료 코드
+   결정: **성공 0건이면 실패**(이 사건), **실패율 5% 초과면 실패**(부분 붕괴).
+   같은 에러는 메시지로 묶어서 상위 3개만 출력 (143줄 → 1줄)
+3. 스크래퍼 4개 연결. 자체 테스트 18/18 (`scripts/test-scrape-report.ts`)
+
+**남은 것** — 이번에 안 건드린 두 축. TODO Priority 0.7:
+스크랩 후 sanity check(축 4), `scripts/` 타입체크 편입(축 2),
+`db push` → `prisma migrate` 전환(축 3).
+
+**아직 설명 안 된 것** — 크론 시점(08-12 06:19)에 `id` 컬럼이 없었다는 `db push`의
+판단이 몇 시간 뒤 내 측정과 안 맞는다. 내가 `DROP COLUMN`을 실행했을 때 실제로
+지워졌으니(`attisdropped` 시체가 그때 생김) 그 시점엔 분명 있었다. 스키마를 맞춰
+푸시하면 증상은 사라지지만 원인은 미해결.
+
+**배운 것** —
+
+---
+
 ## 2026-08-11 · 있어야 할 컬럼이 없음 — `db push`가 임베딩을 지우고 있었다
 
 **증상** — 용량 게이트를 검증하려고 매칭 스크립트를 돌렸더니:
