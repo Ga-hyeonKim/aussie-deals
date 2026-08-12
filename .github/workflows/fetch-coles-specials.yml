@@ -26,11 +26,21 @@ jobs:
 
       - name: Push schema to DB (with retry for Neon cold start)
         run: |
+          # Exit non-zero if every attempt fails. The retry exists for Neon
+          # cold starts, not to make a real schema mismatch survivable: the
+          # old `&& break` left `sleep` as the last command, so three failed
+          # pushes still exited 0 and the scraper ran against a schema the
+          # database did not have. On 2026-08-12 that silently dropped a
+          # week of price_history.
           for i in 1 2 3; do
-            npx prisma db push --accept-data-loss && break
+            if npx prisma db push --accept-data-loss; then
+              exit 0
+            fi
             echo "Attempt $i failed, waiting 10s..."
             sleep 10
           done
+          echo "::error::prisma db push failed 3 times - refusing to scrape against a mismatched schema"
+          exit 1
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 

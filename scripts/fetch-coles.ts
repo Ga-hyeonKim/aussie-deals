@@ -10,6 +10,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
 import { normalizeName } from "../lib/normalize";
+import { createScrapeReport, type ScrapeReport } from "../lib/scrape-report";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "playwright";
@@ -246,7 +247,8 @@ function reportSkipped(total: number): void {
 async function upsertBatch(
   products: ParsedProduct[],
   validFrom: Date,
-  validTo: Date
+  validTo: Date,
+  report: ScrapeReport
 ): Promise<void> {
   const results = await Promise.all(
     products.map(async p => {
@@ -311,10 +313,10 @@ async function upsertBatch(
           select: { id: true },
         });
 
+        report.ok("storeProduct");
         return { id: sp.id, price: p.salePrice, isOnSale: isRealDiscount };
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[Coles] ${p.name} 저장 실패:`, msg);
+        report.fail("storeProduct", e);
         return null;
       }
     })
@@ -328,11 +330,14 @@ async function upsertBatch(
 
   if (history.length > 0) {
     // skipDuplicates: see fetch-coles-all.ts — one batch, one timestamp.
-    await prisma.priceHistory.createMany({ data: history, skipDuplicates: true }).catch((e: Error) => console.error(`[Coles] PriceHistory createMany 실패:`, e.message));
+    await prisma.priceHistory
+      .createMany({ data: history, skipDuplicates: true })
+      .then(r => report.ok("priceHistory", r.count))
+      .catch((e: Error) => report.fail("priceHistory", e, history.length));
   }
 }
 
-async function saveToDb(products: ParsedProduct[]) {
+async function saveToDb(products: ParsedProduct[], report: ScrapeReport) {
   const { validFrom, validTo } = getWeekRange();
   console.log(`[Coles] 유효 기간: ${validFrom.toDateString()} ~ ${validTo.toDateString()}`);
   console.log(`[Coles] DB 저장 시작: ${products.length}개...`);
@@ -345,7 +350,7 @@ async function saveToDb(products: ParsedProduct[]) {
 
   for (let i = 0; i < products.length; i += BATCH_SIZE) {
     const batch = products.slice(i, i + BATCH_SIZE);
-    await upsertBatch(batch, validFrom, validTo);
+    await upsertBatch(batch, validFrom, validTo, report);
     saved += batch.length;
     const elapsed = Date.now() - startTime;
     const rate = saved / (elapsed / 1000);
@@ -355,7 +360,8 @@ async function saveToDb(products: ParsedProduct[]) {
     );
   }
 
-  console.log(`[Coles] DB 저장 완료: ${products.length}개 (총 ${fmt(Date.now() - startTime)})`);
+  // Attempted, not saved — the real counts come from report.finish().
+  console.log(`[Coles] DB 저장 시도 완료: ${products.length}개 (총 ${fmt(Date.now() - startTime)})`);
   reportSkipped(products.length);
 }
 
@@ -424,7 +430,9 @@ async function main() {
   if (fixCats) {
     await fixCategories(unique);
   } else {
-    await saveToDb(unique);
+    const report = createScrapeReport("Coles");
+    await saveToDb(unique, report);
+    report.finish();
   }
 
   await prisma.$disconnect();

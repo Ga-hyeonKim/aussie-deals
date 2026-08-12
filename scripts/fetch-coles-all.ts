@@ -10,6 +10,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
 import { normalizeName } from "../lib/normalize";
+import { createScrapeReport, type ScrapeReport } from "../lib/scrape-report";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "playwright";
@@ -191,7 +192,7 @@ async function collectCategory(
   return products;
 }
 
-async function collect(): Promise<ParsedProduct[]> {
+async function collect(report: ScrapeReport): Promise<ParsedProduct[]> {
   console.log("[Coles All] 전체 카탈로그 수집 시작...");
   const startTime = Date.now();
   const allProducts: ParsedProduct[] = [];
@@ -206,8 +207,10 @@ async function collect(): Promise<ParsedProduct[]> {
       console.log(
         `[Coles All] (${i + 1}/${CATEGORIES.length}) ✓ ${cat.name}: ${products.length}개 (${fmt(Date.now() - catStart)}) — 누계 ${allProducts.length}개`
       );
+      report.ok("category");
     } catch (e) {
       console.error(`[Coles All] ✗ ${cat.name} 실패 (건너뜀):`, e instanceof Error ? e.message : e);
+      report.fail("category", e);
     }
   }
 
@@ -217,7 +220,7 @@ async function collect(): Promise<ParsedProduct[]> {
 
 // --- DB Save ---
 
-async function upsertBatch(products: ParsedProduct[]): Promise<void> {
+async function upsertBatch(products: ParsedProduct[], report: ScrapeReport): Promise<void> {
   const results = await Promise.all(
     products.map(async p => {
       try {
@@ -244,10 +247,10 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
           },
           select: { id: true },
         });
+        report.ok("storeProduct");
         return { id: sp.id, price: p.price };
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[Coles All] ${p.name} 저장 실패:`, msg);
+        report.fail("storeProduct", e);
         return null;
       }
     })
@@ -264,11 +267,14 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
     // freezes per transaction — every row in this batch shares one timestamp.
     // A product appearing twice in one batch would otherwise collide with the
     // (store_product_id, recordedAt) primary key and take the whole batch down.
-    await prisma.priceHistory.createMany({ data: history, skipDuplicates: true }).catch((e: Error) => console.error(`[Coles All] PriceHistory createMany 실패:`, e.message));
+    await prisma.priceHistory
+      .createMany({ data: history, skipDuplicates: true })
+      .then(r => report.ok("priceHistory", r.count))
+      .catch((e: Error) => report.fail("priceHistory", e, history.length));
   }
 }
 
-async function saveToDb(products: ParsedProduct[]) {
+async function saveToDb(products: ParsedProduct[], report: ScrapeReport) {
   console.log(`[Coles All] DB 저장 시작: ${products.length}개...`);
   await prisma.$queryRaw`SELECT 1`;
   console.log("[Coles All] DB 연결 확인 완료.");
@@ -278,7 +284,7 @@ async function saveToDb(products: ParsedProduct[]) {
 
   for (let i = 0; i < products.length; i += BATCH_SIZE) {
     const batch = products.slice(i, i + BATCH_SIZE);
-    await upsertBatch(batch);
+    await upsertBatch(batch, report);
     saved += batch.length;
     const elapsed = Date.now() - startTime;
     const rate = saved / (elapsed / 1000);
@@ -290,7 +296,8 @@ async function saveToDb(products: ParsedProduct[]) {
     }
   }
 
-  console.log(`[Coles All] DB 저장 완료 (총 ${fmt(Date.now() - startTime)})`);
+  // Attempted, not saved — the real counts come from report.finish().
+  console.log(`[Coles All] DB 저장 시도 완료 (총 ${fmt(Date.now() - startTime)})`);
 }
 
 // --- Main ---
@@ -309,6 +316,7 @@ async function main() {
   const fromJson = process.argv.includes("--from-json");
 
   let unique: ParsedProduct[];
+  const report = createScrapeReport("Coles All");
 
   if (fromJson) {
     if (!fs.existsSync(DUMP_PATH)) {
@@ -319,7 +327,7 @@ async function main() {
     unique = deduplicate(raw);
     console.log(`[Coles All] dump 파일 로드: ${raw.length}개 → 중복 제거 후 ${unique.length}개`);
   } else {
-    const allProducts = await collect();
+    const allProducts = await collect(report);
     unique = deduplicate(allProducts);
     console.log(`[Coles All] 총 ${allProducts.length}개 수집, 중복 제거 후 ${unique.length}개`);
 
@@ -327,7 +335,8 @@ async function main() {
     console.log(`[Coles All] dump 파일 저장 완료: ${DUMP_PATH}`);
   }
 
-  await saveToDb(unique);
+  await saveToDb(unique, report);
+  report.finish();
   await prisma.$disconnect();
   await _browser?.close();
 }

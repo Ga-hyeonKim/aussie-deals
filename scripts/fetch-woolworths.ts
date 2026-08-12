@@ -6,6 +6,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
 import { normalizeName } from "../lib/normalize";
+import { createScrapeReport } from "../lib/scrape-report";
 
 chromium.use(StealthPlugin());
 
@@ -188,6 +189,7 @@ async function main() {
 
   console.log(`[Woolworths] 총 ${allProducts.length}개 수집. DB 저장 중...`);
 
+  const report = createScrapeReport("Woolworths");
   let upserted = 0;
   for (const p of allProducts) {
     await prisma.product.upsert({
@@ -233,14 +235,17 @@ async function main() {
       select: { id: true },
     });
 
-    await prisma.priceHistory.create({
-      data: { storeProductId: storeProduct.id, price: p.salePrice, isOnSale: true },
-    }).catch((e: Error) => console.error(`[Woolworths] PriceHistory 저장 실패 (${p.name}):`, e.message));
+    await prisma.priceHistory
+      .create({ data: { storeProductId: storeProduct.id, price: p.salePrice, isOnSale: true } })
+      .then(() => report.ok("priceHistory"))
+      .catch((e: Error) => report.fail("priceHistory", e));
 
+    report.ok("storeProduct");
     upserted++;
   }
 
   console.log(`[Woolworths] DB 저장 완료: ${upserted}개`);
+  report.finish();
   await prisma.$disconnect();
 }
 
