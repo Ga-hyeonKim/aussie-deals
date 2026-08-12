@@ -37,7 +37,9 @@ dimension** — that is when assumptions from a narrower world quietly expire.
   prerender errors; it always has a real URL.
 - **Log the diagnosis in `DEBUGGING.md` as it happens** — while the numbers are
   still to hand, not at wrap-up. Only cases whose scope was actually measured.
-  Leave the `**배운 것**` line empty; it belongs to the author.
+  Write the `**배운 것**` line too, and write it as an interview answer: the
+  claim the measurement actually licences, the judgement call behind it, and
+  what generalises past this bug. No praise, no restating the fix.
 
 ## Tech Stack
 
