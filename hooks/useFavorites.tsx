@@ -57,14 +57,26 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
-        .then(res => (res.ok && !removing ? res.json() : null))
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return !removing ? res.json() : null
+        })
         .then(data => {
           if (!removing && isProductFallback && data?.storeProductId) {
             productToStoreRef.current.set(id, data.storeProductId)
             setFavorites(prev2 => new Set([...prev2, data.storeProductId]))
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          // The heart was filled in optimistically; if the server never stored
+          // it, put it back rather than showing a save that did not happen.
+          setFavorites(prev2 => {
+            const reverted = new Set(prev2)
+            if (removing) reverted.add(id)
+            else reverted.delete(id)
+            return reverted
+          })
+        })
 
       return next
     })

@@ -61,24 +61,38 @@ export default function CrossStorePriceChart({ stores }: Props) {
   const [series, setSeries] = useState<Record<string, PricePoint[]>>({})
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState<string>("All")
+  // A failed request must not look like "this product has no history".
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
+    setFailed(false)
 
     Promise.all(
       stores.map(s =>
         fetch(`/api/price-history/${s.storeProductId}`)
-          .then(r => (r.ok ? r.json() : []))
+          .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`)
+            return r.json()
+          })
           .then((h: PricePoint[]) => [s.store, h] as const)
       )
-    ).then(entries => {
-      if (cancelled) return
-      setSeries(Object.fromEntries(entries))
-      setLoading(false)
-    })
+    )
+      .then(entries => {
+        if (cancelled) return
+        setSeries(Object.fromEntries(entries))
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
 
     return () => { cancelled = true }
-  }, [stores])
+  }, [stores, attempt])
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -194,7 +208,19 @@ export default function CrossStorePriceChart({ stores }: Props) {
         </p>
       </div>
 
-      {!chartable ? (
+      {failed ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-xs text-gray-500 dark:text-neutral-400">
+            Couldn&apos;t load price history.
+          </p>
+          <button
+            onClick={() => setAttempt(a => a + 1)}
+            className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !chartable ? (
         <p className="text-xs text-gray-400 dark:text-neutral-500">
           No price history yet — the chart appears once a few weekly updates have run.
         </p>
