@@ -260,7 +260,11 @@ async function upsertBatch(products: ParsedProduct[]): Promise<void> {
   }));
 
   if (history.length > 0) {
-    await prisma.priceHistory.createMany({ data: history }).catch((e: Error) => console.error(`[Coles All] PriceHistory createMany 실패:`, e.message));
+    // skipDuplicates: recordedAt defaults to CURRENT_TIMESTAMP, which Postgres
+    // freezes per transaction — every row in this batch shares one timestamp.
+    // A product appearing twice in one batch would otherwise collide with the
+    // (store_product_id, recordedAt) primary key and take the whole batch down.
+    await prisma.priceHistory.createMany({ data: history, skipDuplicates: true }).catch((e: Error) => console.error(`[Coles All] PriceHistory createMany 실패:`, e.message));
   }
 }
 
