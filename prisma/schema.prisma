@@ -74,14 +74,12 @@ model StoreProduct {
   priceHistory    PriceHistory[]
 
   @@unique([store, name])
-  @@index([store, category])
   @@index([canonicalBrand])
   @@index([productGroupId])
   @@map("store_products")
 }
 
 model PriceHistory {
-  id             String       @id @default(cuid())
   storeProductId String       @map("store_product_id")
   price          Float
   isOnSale       Boolean      @default(false)
@@ -89,7 +87,13 @@ model PriceHistory {
 
   storeProduct   StoreProduct @relation(fields: [storeProductId], references: [id], onDelete: Cascade)
 
-  @@index([storeProductId, recordedAt])
+  /// The pair is the identity — there is no surrogate `id`. A cuid column plus
+  /// its own 52MB primary-key index bought nothing (idx_scan = 0) while every
+  /// read went through this pair, so the pair became the key and the surrogate
+  /// was dropped to get back under Neon's 512MB limit (Aug 2026).
+  /// Note this makes rows unique per *timestamp*, not per day: a workflow that
+  /// re-runs still appends a second row for the same day.
+  @@id([storeProductId, recordedAt])
   @@map("price_history")
 }
 

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
 type PricePoint = {
-  id: string
   price: number
   isOnSale: boolean
   recordedAt: string
