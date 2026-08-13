@@ -32,8 +32,11 @@ const prisma = new PrismaClient({ adapter });
  */
 const MB = 1024 * 1024;
 
+/** Bigint counts out of the pg catalogue — read through `Number()`, never used arithmetically as-is. */
+type RawRow = Record<string, string | bigint | number | null>;
+
 async function size() {
-  const [r] = await prisma.$queryRawUnsafe<any[]>(
+  const [r] = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT pg_database_size(current_database()) AS bytes`
   );
   return Number(r.bytes) / MB;
@@ -56,7 +59,7 @@ async function main() {
 
   // Guard: the composite primary key can only be created if the pair is already
   // unique. Measured 0 duplicates on 2026-08-11 — verify rather than trust.
-  const [dup] = await prisma.$queryRawUnsafe<any[]>(
+  const [dup] = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT count(*) - count(DISTINCT (store_product_id, "recordedAt")) AS n FROM price_history`
   );
   if (Number(dup.n) !== 0) {
