@@ -39,6 +39,8 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm test
+
       # `next dev` always has a real URL, so it cannot catch the prerender
       # errors that useSearchParams and server/client boundary mistakes
       # produce. That is what this step is for.

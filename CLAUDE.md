@@ -32,9 +32,16 @@ dimension** — that is when assumptions from a narrower world quietly expire.
 - **Measure before fixing.** Count how many rows are affected and compare
   across stores — an asymmetry (Woolworths 0%, Coles 30%) localises the bug
   faster than reading code does.
-- **Run `npm run build` before pushing anything touching `useSearchParams`,
-  URL params, or server/client boundaries.** `npm run dev` cannot catch
-  prerender errors; it always has a real URL.
+- **Invariants belong in `lib/` tests, not only in this list.** Every rule
+  above that is only prose here is a rule that gets re-implemented inline
+  somewhere else — that is how `fetch-coles.ts` ended up with its own copy of
+  `isRealDeal`. If you can name it, write the case.
+- **CI runs lint, typecheck, test and build on every push.** The old agreement
+  here was "run `npm run build` before pushing anything touching
+  `useSearchParams`" — it is now enforced rather than remembered. `npm run dev`
+  still cannot catch prerender errors; it always has a real URL.
+- **A scrape job must never migrate the schema.** No `prisma db push` in a
+  workflow. Schema changes are a deploy step.
 - **Log the diagnosis in `DEBUGGING.md` as it happens** — while the numbers are
   still to hand, not at wrap-up. Only cases whose scope was actually measured.
   Write the `**배운 것**` line too, and write it as an interview answer: the
@@ -57,7 +64,11 @@ dimension** — that is when assumptions from a narrower world quietly expire.
 
 ```bash
 npm run dev
-npx prisma db push          # sync schema (dev only)
+npm test                    # vitest — lib/ invariants
+npm run typecheck           # tsc --noEmit, includes scripts/
+npm run lint
+npm run build               # the only thing that catches prerender errors
+npx prisma db push          # sync schema (dev only — never in a workflow)
 npx prisma studio           # DB GUI
 npx prisma generate         # after schema changes
 npx tsx scripts/fetch-woolworths.ts
