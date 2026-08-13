@@ -36,9 +36,8 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude code — skills are project rules and belong in the repo;
-# only the machine-local settings are ignored.
-.claude/settings.local.json
+# claude code (의도적 — 저장소에 노출하지 않음)
+.claude/
 
 # session-local tracking (personal, not for repo)
 SESSION_NOTES.md
