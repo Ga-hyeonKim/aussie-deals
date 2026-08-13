@@ -1,33 +1,48 @@
-import { describe, it } from "vitest"
-// import { expect } from "vitest"
-// import { canonicalizeBrand } from "./canonicalize"
+import { describe, expect, it } from "vitest"
+import { canonicalizeBrand } from "./canonicalize"
 
 /**
- * The join key for cross-store matching — scripts/match-products.ts:36-56 joins
- * Woolworths to Coles on canonical_brand alone, so anything this gets wrong is
- * a pair that never gets considered at all.
- *
- * Replace each `it.todo(...)` with a real case.
- *
- * Note while writing these: scripts/backfill-canonical-brand.ts:14-24 carries a
- * second, hand-copied implementation of this function. These tests only cover
- * the one in lib/. Deleting the copy and importing this module is the fix, and
- * these tests are what make that safe.
+ * The join key for cross-store matching. scripts/match-products.ts:36-56 joins
+ * Woolworths to Coles on canonical_brand alone, so a brand these two stores
+ * spell differently is a pair that never gets considered at all.
  */
 describe("canonicalizeBrand", () => {
-  it.todo("null, undefined and '' are all null — no brand, not an empty brand")
+  describe("absence", () => {
+    it("maps every kind of missing brand to null", () => {
+      expect(canonicalizeBrand(null)).toBeNull()
+      expect(canonicalizeBrand(undefined)).toBeNull()
+      expect(canonicalizeBrand("")).toBeNull()
+      expect(canonicalizeBrand("   ")).toBeNull()
+    })
 
-  it.todo("whitespace-only is null")
+    it("returns null when nothing survives stripping", () => {
+      // Not "", which would become a join key that groups unrelated products.
+      expect(canonicalizeBrand("®")).toBeNull()
+    })
+  })
 
-  it.todo("a brand that is nothing but strippable characters comes back null")
+  describe("normalising", () => {
+    it("drops trademark symbols", () => {
+      expect(canonicalizeBrand("Milo®")).toBe("milo")
+    })
 
-  it.todo("drops ® and ™")
+    it("drops both straight and curly apostrophes", () => {
+      expect(canonicalizeBrand("Arnott's")).toBe("arnotts")
+      expect(canonicalizeBrand("Arnott’s")).toBe("arnotts")
+    })
 
-  it.todo("drops both straight and curly apostrophes — Arnott's and Arnott’s agree")
+    it("turns hyphens into spaces", () => {
+      expect(canonicalizeBrand("Coca-Cola")).toBe("coca cola")
+    })
 
-  it.todo("turns hyphens into spaces")
+    it("strips trailing sentence punctuation but keeps it mid-brand", () => {
+      expect(canonicalizeBrand("Dr. Oetker.")).toBe("dr. oetker")
+    })
+  })
 
-  it.todo("strips trailing . ! ? but not ones in the middle")
-
-  it.todo("the same brand written two ways by the two stores lands on one key")
+  it("lands the same brand on one key however the two stores spell it", () => {
+    const spellings = ["Arnott's", "Arnott’s", "ARNOTTS", "arnotts "]
+    const keys = new Set(spellings.map(canonicalizeBrand))
+    expect(keys).toEqual(new Set(["arnotts"]))
+  })
 })
