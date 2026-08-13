@@ -70,7 +70,7 @@ GitHub Actions (cron, 주간)          Vercel
 
 ## 최근 (2026-08-13, `chore/guardrails`, 미푸시)
 
-1단계 가드레일 완료 — 커밋 5개.
+**가드레일** — 커밋 5개.
 
 - 크론 4개에서 `prisma db push --accept-data-loss` 제거
   (2026-04-17부터 4개월간 매주 프로덕션에 실행되고 있었음)
@@ -83,6 +83,19 @@ GitHub Actions (cron, 주간)          Vercel
 ESLint에 React Compiler 룰 8건이 warn으로 베이스라인됨 — 6개 파일 한정.
 데이터 페칭 패턴을 손볼 때 같이 사라진다.
 
+**문서 구조화** — 커밋 3개.
+
+- `CLAUDE.md` 118 → 88줄. 항상 참인 것만 남기고 나머지는 내보냄
+- `AGENTS.md` 삭제 (7/28 이후 방치, 파일 맵이 이미 틀려 있었음).
+  고유 제약 4개는 Invariants로 흡수
+- `.claude/skills/` 4개 신설 — `scraper-work`, `db-schema`, `debug-log`,
+  `session-wrap`. `.claude/commands/wrap-up.md`는 마지막 것으로 대체
+- `STATE.md` 신설 (이 파일)
+- 메모리 17개 → 1개. 프로젝트 사실은 이 파일로, 프로젝트를 넘나드는 건
+  글로벌 `CLAUDE.md`로 옮김
+
+`.claude/`는 의도적으로 gitignore 유지 — 스킬은 로컬에만 있고 저장소에 안 들어간다.
+
 ## 측정된 부채 (다음 구조 정리의 재료)
 
 | 항목 | 규모 |
@@ -93,15 +106,17 @@ ESLint에 React Compiler 룰 8건이 warn으로 베이스라인됨 — 6개 파�
 | 죽은 코드 | `app/api/products/route.ts`(호출자 0), backfill 스크립트 2개, `reclaim-space.ts` |
 | 중복 구현 | `scripts/backfill-canonical-brand.ts`가 `lib/canonicalize.ts` 손복사본 |
 | 포맷 헬퍼 | money `toFixed(2)` 31곳, 스토어 라벨 5곳, 날짜 포맷 5곳 |
-| 문서 | 8개 1,682줄. 2026-08-12 사고 하나가 8곳에 기록됨 |
+| 문서 중복 | 2026-08-12 사고 하나가 여전히 `DEBUGGING`/`DECISIONS`/`CHANGELOG`/`SESSION_NOTES`/코드 주석에 중복 기록 |
 | N+1 | `app/product-group/[id]/page.tsx` — 그룹 멤버당 쿼리 2회 |
+| 근거 없는 상수 | `match-products.ts`의 `SIMILARITY_THRESHOLD = 0.92` — 검증 안 됨 |
 
 ## 다음 (순서)
 
-1. **문서 구조화** — `CLAUDE.md` 40줄로 축소, `AGENTS.md` 삭제, skills 4개 신설
-2. **마이그레이션 도입** — baseline 생성 후 `migrate deploy`. 수동 DDL(pg_trgm,
+1. **마이그레이션 도입** — baseline 생성 후 `migrate deploy`. 수동 DDL(pg_trgm,
    미존재 벡터 인덱스)이 버전 관리로 편입됨
-3. **임베딩/매칭 워크플로 연결** — 부채가 아니라 미완성 기능
-4. **코드 구조 정리** — 위 부채 표. 스크레이퍼 중복은 **스토어 추가할 때** 같이
-5. **README에 사례 꺼내기** — 인시던트가 `DEBUGGING.md` 574줄에 묻혀 있음.
+2. **임베딩/매칭 워크플로 연결** — 부채가 아니라 미완성 기능
+3. **코드 구조 정리** — 위 부채 표. 스크레이퍼 중복은 **스토어 추가할 때** 같이
+4. **README에 사례 꺼내기** — 인시던트가 `DEBUGGING.md` 574줄에 묻혀 있음.
    면접 질문을 부르는 자산인데 아무도 안 봄
+
+`TODO.md`에 별도 트랙 두 개가 더 있다 — 면접 준비(드릴 파생)와 Priority 0.9 보안.
