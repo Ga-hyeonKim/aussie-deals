@@ -9,6 +9,7 @@ import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { canonicalizeBrand } from "../lib/canonicalize";
+import { isRealDeal } from "../lib/deal";
 import { normalizeName } from "../lib/normalize";
 import { createScrapeReport, type ScrapeReport } from "../lib/scrape-report";
 import { chromium } from "playwright-extra";
@@ -258,7 +259,7 @@ async function upsertBatch(
         // a single unit price. Writing those to Product made them render as
         // "ON SALE" at full price (30% of live Coles specials, Aug 2026).
         // The catalogue row below is still worth updating; the special is not.
-        const isRealDiscount = p.originalPrice !== null && p.salePrice < p.originalPrice;
+        const isRealDiscount = isRealDeal(p);
 
         if (isRealDiscount) {
           await prisma.product.upsert({
