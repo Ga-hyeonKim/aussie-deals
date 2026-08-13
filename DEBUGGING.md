@@ -28,6 +28,7 @@ Error occurred prerendering page "/favorites"
 ```
 
 **좁혀간 과정**
+
 1. "사이트가 안 터졌는데?" → 빌드 실패 시 Vercel은 해당 배포를 **승격하지 않고 버림**.
    직전 성공 배포가 계속 서빙됨. 터진 게 아니라 **업데이트가 멈춘** 상태
 2. 커밋 시각 대조 → 마지막 성공 배포는 `28d5829`(08-10 13:06). 그 뒤 22시간 작업이
@@ -64,24 +65,29 @@ Next가 빌드 타임 정적 프리렌더를 시도함. 프리렌더 시점엔 �
 $15.80이고, 매장에서 실물 확인한 결과 할인 중이 아님.
 
 **좁혀간 과정**
+
 1. DB 직접 조회 → 콜스에 라이브 특가 행이 실제로 존재:
    `sale=$15.80 orig=null pct=null 2026-08-04~08-11`
    카탈로그 가격도 $15.80. **할인폭이 0원인데 특가 테이블에 있음**
 2. 범위 측정 → 매장별로 갈림:
+   
    ```
    WOOLWORTHS: 5,467 live,     0 fake (0.0%)
    COLES:      6,619 live, 1,985 fake (30.0%)
    ```
+   
    울리스가 0건이라는 게 결정적. 공용 코드가 아니라 **콜스 스크래퍼 문제**로 좁혀짐
 3. 만료일 확인 → 1,985건 전부 `validTo = 08-11` 한 묶음. 그날 밤 자동 소멸.
    **정리 스크립트 불필요**, 대신 다음 수요일 크론이 새 배치를 넣는 게 문제
 
 **원인 (둘)**
+
 - 스크래퍼: `fetch-coles.ts`가 `/on-special`에 뜬 걸 전부 `Product`에 저장. 콜스는
   was-price 없는 항목("Low Price", "New", 멀티바이)도 그 페이지에 올림
 - UI: 6곳이 각자 "`currentDeal`이 존재하면 세일"로 판단. **실제로 싸졌는지는 아무도 안 봄**
 
 **처방**
+
 - `originalPrice`가 있고 `salePrice < originalPrice`일 때만 `Product`에 기록 (`16bd19d`)
 - `lib/deal.ts`의 `isRealDeal()`로 판단을 한 곳에 모으고 6곳 교체 (`a5f8c52`)
 - 걸러진 건수를 `promotionType`별로 로그에 집계 — 멀티바이가 많으면 제대로 모델링할 근거
@@ -104,20 +110,25 @@ ON SALE로 렌더되므로 **버리는 쪽이 어느 경우든 덜 틀림.**
 "Cheapest at Woolworths right now · $9.40 · $6.40 less than Coles".
 
 **좁혀간 과정**
+
 1. 두 값의 출처가 다름을 확인
    - 카드 = `StoreProduct.price` + 라이브 특가 → 진짜 현재가
    - 차트 = **PriceHistory의 마지막 행**을 "지금 가격"으로 간주
 2. 해당 상품 이력 조회:
+   
    ```
    울리스 마지막 기록: 2026-07-28  $9.40   ← 2주 전, 그 주 세일가
    콜스   마지막 기록: 2026-08-04  $15.80
    ```
+   
    **서로 다른 날짜를 비교**하고 있었음
 3. 예외인지 확인 → 예외가 아니었음:
+   
    ```
    양쪽 매장 이력이 있는 ProductGroup:       3,314개
    두 시계열의 끝 날짜가 다른 것:            3,225개 (97.3%)
    ```
+   
    크로스스토어 판정이 사실상 전부 신뢰 불가
 
 **곁가지** — Tim Tam도 틀려 있었으나 카드가 맞아서 눈에 안 띄었음. 차트가 울리스를
@@ -146,12 +157,15 @@ stale vs fresh 비교가 됨.
 ## 2026-08-11 · Neon 512MB 한도 — 그리고 임베딩의 63%가 애초에 무용지물
 
 **증상** — 임베딩 재생성이 첫 배치에서 죽음. 0개 저장.
+
 ```
 could not extend file because project size limit (512 MB) has been exceeded
 ```
 
 **좁혀간 과정**
+
 1. 테이블별 크기 측정:
+   
    ```
    price_history    250 MB  (테이블 114 + 인덱스 136)   1,095,792행
    store_products   154 MB  (테이블 138 + 인덱스  16)      97,571행
@@ -162,6 +176,7 @@ could not extend file because project size limit (512 MB) has been exceeded
    테이블이 그럴 수 없음 → 뭔가 남아있다고 판단
 3. **첫 가설: 죽은 튜플. 틀렸음.** `n_dead_tup`이 2,811 / 97,571 = 2.9%뿐
 4. 재측정 — `pg_stats`의 `avg_width` 합으로 실제 필요량을 계산:
+   
    ```
    bytes/row 실제:  1,481
    bytes/row 예상:  ~309
@@ -169,6 +184,7 @@ could not extend file because project size limit (512 MB) has been exceeded
    vector(256):     ~1,028 bytes/row
    attisdropped 컬럼: 2개
    ```
+   
    → 죽은 튜플이 아니라 **지워진 컬럼의 바이트가 살아있는 행 안에** 남은 것.
    Postgres는 `DROP COLUMN` 시 테이블을 재작성하지 않음
 5. 회수 방법 확인 → 일반 `VACUUM`은 불가(죽은 튜플이 아니므로),
@@ -177,11 +193,13 @@ could not extend file because project size limit (512 MB) has been exceeded
    **"이 임베딩이 다 필요한가"**를 물음. 매칭 쿼리가
    `w.canonical_brand = c.canonical_brand`로 조인하므로 브랜드가 한쪽 매장에만
    있으면 매칭이 원리적으로 불가능:
+   
    ```
    normalized_name 있는 상품:       98,805
    브랜드가 양쪽 매장에 다 있는 것:  36,229 (36.7%)
    저장 공간: 전체 97MB  vs  필요한 것만 36MB
    ```
+   
    **62,576개, 61MB가 구조적으로 무용지물이었음**
 7. 인덱스 사용량도 측정 → `price_history_pkey` 52MB, `idx_scan = 0`.
    조회는 전부 `(storeProductId, recordedAt)` 복합 인덱스(84MB, 6,972회)로 나감
@@ -191,6 +209,7 @@ could not extend file because project size limit (512 MB) has been exceeded
 잘못이었고, 한도 때문에 드러났을 뿐.
 
 **처방 (계획)** — TODO Priority 0.5의 H → G → F
+
 1. `price_history`의 PK를 `(storeProductId, recordedAt)` 복합키로 변경 (52MB + 27MB)
 2. 임베딩은 양쪽 매장 공통 브랜드 36,229개만 생성 (97MB → 36MB)
 3. 그 다음 용량 게이트로 ProductGroup 전체 재생성
@@ -212,11 +231,14 @@ could not extend file because project size limit (512 MB) has been exceeded
 인덱스 + 27MB 컬럼 데이터 회수, 그 전에 중복 행 제거"였음.
 
 **좁혀간 과정**
+
 1. 실행 전 재측정에서 계획의 전제 하나가 무너짐:
+   
    ```
    (store_product_id, recordedAt) 중복:        0건
    (store_product_id, recordedAt::date) 중복: 103,749건
    ```
+   
    중복은 **날짜** 기준이지 **timestamp** 기준이 아니었음. 복합 PK는 timestamp로
    걸리므로 **중복 제거 선행이 애초에 필요 없었음**
 2. 두 번째 전제도 틀림 — `DROP COLUMN`으로 27MB를 회수한다고 썼는데, **바로 위
@@ -225,31 +247,37 @@ could not extend file because project size limit (512 MB) has been exceeded
    같은 문서의 처방 줄에 반영되지 않았음
 3. 중복 103,749행의 정체를 물음 — 워크플로 4개가 주 4회 쌓는 것이라는 기존 추정을
    분포로 확인:
+   
    ```
    (상품, 날짜)당 1행:  907,376   ← 정상
               2행:      73,597
               3행 이상:  8,000여
    날짜별 평균: 월요일 1.00, 겹치는 날 1.05~1.30
    ```
+   
    주 4회가 아니라 **specials와 catalog가 같은 날 겹칠 때만** 생김. 추정보다 온건
 4. `store_products`의 시체를 살아있는 payload와 직접 비교 (`pg_column_size`):
+   
    ```
    살아있는 데이터:   72MB (764 bytes/행)
    물리 크기:        138MB (1,463 bytes/행)
    차이:              66MB (699 bytes/행)   ← 드롭된 컬럼 2개
    ```
+   
    `attnum` 14·15, 둘 다 가변길이. 스키마 컬럼 순서상 14번이 `embedding`,
    15번은 재생성 후 두 번째로 드롭된 것. **`vector(256)` = 1,032 bytes/행**
 5. 반대로 `price_history`는 살아있는 103 vs 물리 109 bytes/행 — 시체가 없음.
    **250MB는 전부 진짜 행.** 두 테이블의 문제가 서로 다른 종류였음
 6. 위 항목에서 "`VACUUM FULL`은 138MB 여유가 필요한데 22MB뿐 → 막힘"으로 닫았던
    길을 다시 봄. 인덱스를 먼저 지우면 **그 순간에만** 창이 열림:
+   
    ```
    1. DROP price_history_pkey          490 → 438MB
    2. DROP 복합 인덱스                  438 → 354MB   여유 158MB
    3. VACUUM FULL store_products       ← 이 창에서만 가능
    4. ADD PRIMARY KEY (복합)
    ```
+   
    순서를 뒤집으면(4를 3보다 먼저) 여유가 82MB로 줄어 3이 실패함
 7. 실행 시간이 걱정되어 먼저 측정 → Neon compute 247 MB/s, 1.1M행 정렬 2.2초.
    전체 몇 분이 아니라 **6초**
@@ -260,11 +288,13 @@ could not extend file because project size limit (512 MB) has been exceeded
 
 **처방** — `scripts/reclaim-space.ts` (6단계, 각 단계 전후 크기 로깅, 재실행 가능).
 결과:
+
 ```
 전체:            490MB → 305MB   (여유 22MB → 207MB)
 store_products   154MB →  43MB   (VACUUM FULL, -109MB)
 price_history    250MB → 176MB   (인덱스 136 → 62MB)
 ```
+
 `VACUUM FULL`이 예상 66MB가 아닌 109MB를 뱉음 — 죽은 튜플과 인덱스 재작성분이 더
 있었음. 새 복합 PK는 예상 76MB가 62MB (`id` 컬럼이 빠진 뒤 정렬된 상태로 빌드).
 
@@ -299,7 +329,9 @@ PK를 먼저 만들면 여유가 82MB로 줄어 3단계가 실패한다 — 같�
 Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이었다.
 
 **좁혀간 과정**
+
 1. 08-12 새벽 크론이 `success`인데 `price_history`의 마지막 날짜가 08-10:
+   
    ```
    Product         08-11 배치 정상 (Coles 5,259 / Woolworths 2,941)
    store_products  08-11 갱신 정상 (98,815행)
@@ -308,12 +340,14 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
 2. 로그에서 `PriceHistory createMany 실패`가 **143번** 반복. 원인은 전부 하나:
    `The column 'id' does not exist in the current database.`
 3. 그 위를 보니 `db push`가 3번 다 실패해 있었음:
+   
    ```
    The required column `id` was added to the `price_history` table with a
    prisma-level default value. There are 1095792 rows in this table, it is
    not possible to execute this step.
    ```
 4. 그런데도 다음 스텝이 실행됨. 워크플로를 보니:
+   
    ```bash
    for i in 1 2 3; do
      npx prisma db push --accept-data-loss && break
@@ -321,6 +355,7 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
      sleep 10          # ← 3번 다 실패하면 마지막 명령이 sleep = exit 0
    done
    ```
+   
    **4개 워크플로 전부** 같은 모양
 5. 스크립트도 종료 코드를 안 냄 — `.catch(e => console.error(...))`가 **14곳**
 6. 마지막 한 겹: 완료 로그가 `products.length`(시도한 수)를 출력.
@@ -328,11 +363,13 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
    **실제 성공 건수를 세는 스크래퍼는 4개 중 `fetch-woolworths.ts` 하나뿐**
    → 그래서 로그에 `DB 저장 완료: 7,134개`가 찍히고 실제 저장은 0건
 7. 왜 아무 검증도 이걸 못 잡았나 확인:
+   
    ```
    tsconfig.json  exclude: ["node_modules", "scripts"]   ← 타입체크 제외
    package.json   typecheck / test 스크립트 없음
    workflows      lint / typecheck / build 스텝 없음
    ```
+   
    프로덕션 DB에 쓰는 코드의 유일한 검증이 "크론이 실제로 도는 것"인데,
    1~6 때문에 그 결과가 안 보임
 
@@ -341,6 +378,7 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
 보고함. 어느 한 겹만 있었어도 잡혔다.
 
 **처방** — (`890c569` 다음 커밋)
+
 1. 워크플로 4개: `&& break` → `if ...; then exit 0; fi` + 마지막에 `exit 1`.
    스키마가 안 맞으면 **쓰지 않는다**
 2. `lib/scrape-report.ts` — 종류별 시도/성공/실패를 세고, 판정 두 가지로 종료 코드
@@ -384,6 +422,7 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
 **증상** — 없음. 위 사건을 고친 뒤 "앱 쪽에도 같은 게 있나" 물어서 찾은 것.
 
 **좁혀간 과정**
+
 1. 에러 화면 파일을 셈 → `error.tsx` / `global-error.tsx` / `not-found.tsx` /
    `loading.tsx` **0개**. 그런데 페이지 5개 전부가 서버 컴포넌트에서 `prisma`를
    직접 부르고 `try/catch`가 없음
@@ -392,6 +431,7 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
 2. 클라이언트 요청을 훑음 → `.then(r => r.ok ? r.json() : [])`가 **4곳**.
    500을 빈 배열로 바꾸고 있었음. 상태가 `loading`/`empty` 둘뿐이라 **실패가 갈 곳이
    없어서 `empty`로 떨어짐**:
+   
    ```
    PriceHistoryChart      "No price history yet"      (기록이 몇 달치 있는데도)
    CrossStorePriceChart   같은 문구
@@ -406,10 +446,12 @@ Actions 로그를 열었다가 발견. 아무도 신고하지 않은 고장이�
 
 **부수 발견 (측정으로만 잡힘)** — `loading.tsx`를 넣자 `notFound()`가 **404 대신
 200**을 반환하기 시작. 상태 코드를 실제로 재보지 않았으면 못 봤을 것:
+
 ```
 loading.tsx 있음:  /product/<없는id>  → HTTP 200   (3개 라우트 전부)
 loading.tsx 없음:  /product/<없는id>  → HTTP 404
 ```
+
 원인: `loading.tsx`가 있으면 Next가 즉시 스트리밍을 시작 → 200 헤더가 이미 나간
 뒤에 "없는 상품"임을 알게 됨 → 늦어서 못 바꿈.
 해결: 메인만 `(browse)` 라우트 그룹으로 옮겨 로딩 UI 범위를 좁힘. 괄호 폴더는
@@ -448,12 +490,15 @@ HTML도 동일함. `error.tsx`도 마찬가지로 빈 셸만 오고 화면은 �
 ## 2026-08-11 · 있어야 할 컬럼이 없음 — `db push`가 임베딩을 지우고 있었다
 
 **증상** — 용량 게이트를 검증하려고 매칭 스크립트를 돌렸더니:
+
 ```
 Raw query failed. Code: 42703. Message: column w.embedding does not exist
 ```
+
 그런데 이 스크립트는 전날 정상 동작해서 ProductGroup 3,362개를 만들었음.
 
 **좁혀간 과정**
+
 1. 컬럼 목록 조회 → `embedding` 없음. 단 `vector` 확장은 살아있고
    ProductGroup 3,362개도 그대로 → **누가 컬럼만 지웠다**
 2. SESSION_NOTES(08-05)에 단서가 있었음:
@@ -478,6 +523,7 @@ Raw query failed. Code: 42703. Message: column w.embedding does not exist
 확인한 뒤 `db push`로 컬럼 재생성 (`cca4457`)
 
 **재발 방지** — CLAUDE.md의 Invariants에 기록:
+
 > **스키마 파일 밖에서 만든 것은, 스키마 파일을 소유한 도구가 지운다.**
 
 그리고 더 일반적으로: **도구가 옳은 관행을 불가능하게 만드는 것처럼 보이면,
@@ -498,10 +544,12 @@ Raw query failed. Code: 42703. Message: column w.embedding does not exist
 콜스 226g $20을 나란히 비교. 이름은 동일하지만 다른 제품.
 
 **좁혀간 과정**
+
 1. Cetaphil 그룹 전수 조회 → 8개 중 3개가 용량 불일치 (226g↔473mL, 236mL↔1L 두 건)
 2. 문자열 단순 비교로 전체 측정 → 3,362개 중 740개(22%). 다만 `"1L"` vs `"1000mL"`처럼
    **표기만 다른 것이 섞인 상한선**
 3. 단위 파서 프로토타입을 써서 재측정 → 실제 오류율:
+   
    ```
    용량 일치:     2,612 (77.7%)
    용량 불일치:     546 (16.2%)   ← 진짜 오류
@@ -553,6 +601,7 @@ Raw query failed. Code: 42703. Message: column w.embedding does not exist
 돌려줌. 브라우저에서는 잘 보이는데 스크립트에서만 막힘.
 
 **시도한 순서 — 각 단계가 다음 층을 드러냄**
+
 1. `64f95ba` 이미지가 안 뜸 → CDN도 Imperva가 막고 있었음. `unoptimized` 처리
 2. `2a8d4d1` fetch가 HTML을 받으면 **curl로 재시도**하는 폴백. 부분적으로 통함
 3. `ac77261` curl도 결국 막힘 → **Playwright로 전환.** HTTP 레벨 우회를 포기하고
@@ -580,6 +629,7 @@ Raw query failed. Code: 42703. Message: column w.embedding does not exist
 **증상** — GitHub Actions에서 `prisma db push` 실패. 로컬에서는 됨.
 
 **시도한 순서**
+
 1. `51fa5e0` `DATABASE_URL`이 없다고 나옴 → datasource에 직접 추가
 2. `7ee11c1` **되돌림.** Prisma 7은 `prisma.config.ts`를 쓰는 게 맞음.
    1번은 증상을 가린 잘못된 수정이었음
