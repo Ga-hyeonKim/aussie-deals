@@ -36,8 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude code
-.claude/
+# claude code — skills are project rules and belong in the repo;
+# only the machine-local settings are ignored.
+.claude/settings.local.json
 
 # session-local tracking (personal, not for repo)
 SESSION_NOTES.md
