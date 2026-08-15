@@ -1,0 +1,49 @@
+name: Match Products
+
+on:
+  schedule:
+    # Tuesday 23:00 UTC = Wednesday 07:00 AWST, after all four scrapers:
+    # catalogs run Monday 20:00/21:00 UTC, specials Tuesday 21:00/21:30 UTC
+    # with a 30 min ceiling. This is the first slot where every store's rows
+    # for the week are already in the database.
+    - cron: "0 23 * * 2"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      # No `prisma db push` here — same reason as the scrape workflows. This
+      # job is the one that most needs the rule: `--accept-data-loss` is what
+      # dropped the `embedding` column and 98,595 vectors on 2026-08-12.
+
+      # Embeds only products whose brand exists in both stores, because the
+      # match query joins on canonical_brand — a single-store brand can never
+      # produce a match. That is ~36% of the catalogue, and the weekly delta is
+      # small, so this costs cents.
+      - name: Embed new products
+        run: npx tsx scripts/embed-products.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # Incremental by construction: the query only considers store_products
+      # with product_group_id IS NULL, so existing groups are left alone and
+      # their /product-group/[id] URLs stay valid.
+      - name: Match products across stores
+        run: npx tsx scripts/match-products.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
