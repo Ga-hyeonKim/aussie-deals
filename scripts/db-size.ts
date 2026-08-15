@@ -18,8 +18,16 @@ const prisma = new PrismaClient({ adapter });
  */
 const n = (v: unknown) => Number(v);
 
+/**
+ * A row from the pg catalogue views below. Every column is either text
+ * (`::text`, `pg_size_pretty`, `::date`) or a bigint count — never a Prisma
+ * model — so the driver hands back bigint, not number. Read counts through
+ * `n()` rather than using them arithmetically.
+ */
+type RawRow = Record<string, string | bigint | number | null>;
+
 async function main() {
-  const [db] = await prisma.$queryRawUnsafe<any[]>(
+  const [db] = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT pg_size_pretty(pg_database_size(current_database())) AS size,
             pg_database_size(current_database()) AS bytes`
   );
@@ -27,7 +35,7 @@ async function main() {
   console.log(`\nDB total: ${db.size}  (${((n(db.bytes) / LIMIT) * 100).toFixed(1)}% of 512MB, ` +
               `${((LIMIT - n(db.bytes)) / 1024 / 1024).toFixed(0)}MB free)\n`);
 
-  const tables = await prisma.$queryRawUnsafe<any[]>(
+  const tables = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT c.relname::text AS relname,
             pg_size_pretty(pg_total_relation_size(c.oid)) AS total,
             pg_size_pretty(pg_table_size(c.oid))          AS tbl,
@@ -41,7 +49,7 @@ async function main() {
   console.log("tables");
   console.table(tables.map(t => ({ ...t, n_live_tup: n(t.n_live_tup), n_dead_tup: n(t.n_dead_tup) })));
 
-  const idx = await prisma.$queryRawUnsafe<any[]>(
+  const idx = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT indexrelname::text AS indexrelname, relname::text AS relname,
             pg_size_pretty(pg_relation_size(indexrelid)) AS size, idx_scan
      FROM pg_stat_user_indexes
@@ -50,7 +58,7 @@ async function main() {
   console.log("indexes (idx_scan = 0 means never used since stats reset)");
   console.table(idx.map(i => ({ ...i, idx_scan: n(i.idx_scan) })));
 
-  const [ph] = await prisma.$queryRawUnsafe<any[]>(
+  const [ph] = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT count(*) AS rows,
             count(DISTINCT (store_product_id, "recordedAt"::date)) AS by_day,
             count(DISTINCT (store_product_id, "recordedAt"))       AS by_timestamp,
@@ -66,7 +74,7 @@ async function main() {
     range: `${ph.first} → ${ph.last}`,
   }]);
 
-  const [sp] = await prisma.$queryRawUnsafe<any[]>(
+  const [sp] = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT count(*) AS total,
             count(*) FILTER (WHERE normalized_name IS NOT NULL) AS with_norm,
             count(*) FILTER (WHERE embedding IS NOT NULL) AS with_embedding
@@ -75,7 +83,7 @@ async function main() {
   console.log("store_products", { total: n(sp.total), with_norm: n(sp.with_norm),
                                   with_embedding: n(sp.with_embedding) });
 
-  const dropped = await prisma.$queryRawUnsafe<any[]>(
+  const dropped = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT attrelid::regclass::text AS tbl, count(*) AS dropped_cols
      FROM pg_attribute WHERE attisdropped AND attrelid::regclass::text NOT LIKE 'pg_%'
      GROUP BY 1 ORDER BY 2 DESC`
