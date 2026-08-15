@@ -36,7 +36,7 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude code
+# claude code (의도적 — 저장소에 노출하지 않음)
 .claude/
 
 # session-local tracking (personal, not for repo)
