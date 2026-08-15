@@ -10,9 +10,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Weekly grocery deals aggregator for Woolworths & Coles (AU). Learning project.
 
-**Current state, constraints and open debt: `STATE.md`. Read it before answering
-anything about how the project is built.** This file holds only what is always
-true.
+Current state, constraints and open debt live in `STATE.md`, imported here so it
+is always loaded. This file holds only what is always true; `STATE.md` holds what
+changes.
+
+@STATE.md
 
 ## Invariants
 
