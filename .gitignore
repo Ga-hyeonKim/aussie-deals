@@ -57,3 +57,7 @@ scripts/woolworths-dump.json
 scripts/coles-dump.json
 scripts/coles-all-dump.json
 scripts/brands-export.json
+
+# agent context (local only)
+CLAUDE.md
+.claude/
