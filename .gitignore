@@ -60,4 +60,5 @@ scripts/brands-export.json
 
 # agent context (local only)
 CLAUDE.md
+IMPORTANT_FILES.md
 .claude/
