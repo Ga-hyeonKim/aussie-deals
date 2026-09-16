@@ -11,7 +11,12 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 90, not 20. The 20 here was never sized against this scraper: collection
+    # alone takes ~12 minutes across 15 categories, and the write loop is serial
+    # with 3 round-trips per product (~9,000 of them), so the job needs ~46. Every
+    # scheduled run from at least 2026-08-25 was cancelled mid-collection and never
+    # reached the DB write step. The catalogue workflows already allow 150-300.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
